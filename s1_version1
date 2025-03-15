@@ -161,7 +161,7 @@ class PricePatternAnalyzer:
                         self.logger.info(f"Found pattern: {pattern_group} (matched: {pattern_string})")
                         break
                             
-                return list(set(found_patterns))
+            return list(set(found_patterns))
 
         def analyze(self, new_price, timestamp):
             """Phân tích giá mới và trả về các mẫu hình tìm thấy"""
@@ -188,7 +188,7 @@ class PricePatternAnalyzer:
             if len(self.price_history) < 10:
                 self.logger.info(f"⏳ Đang chờ thêm dữ liệu... (Có: {len(self.price_history)}/10 điểm)")
                 self.logger.info("=== Kết thúc phân tích ===\n")
-                        return []
+                return []
                         
                 # Log lịch sử giá với giờ VN
                 self.logger.info("\nLịch sử giá:")
@@ -217,12 +217,12 @@ class PricePatternAnalyzer:
                 patterns = self.find_patterns(classified_pivots)
                     
                 if patterns:
-                self.logger.info(f"✅ Đã tìm thấy mẫu hình: {patterns}")
-            else:
-                self.logger.info("❌ Không phát hiện mẫu hình")
+                    self.logger.info(f"✅ Đã tìm thấy mẫu hình: {patterns}")
+                else:
+                    self.logger.info("❌ Không phát hiện mẫu hình")
                     
-            self.logger.info("=== Kết thúc phân tích ===\n")
-            return patterns
+                self.logger.info("=== Kết thúc phân tích ===\n")
+                return patterns
         
 class PriceAlertBot:
     def __init__(self):
