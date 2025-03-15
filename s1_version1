@@ -40,25 +40,25 @@ logging.basicConfig(
 
 class PricePatternAnalyzer:
         def __init__(self, max_bars=200):
-                self.max_bars = max_bars
-                self.price_history = []
-                self.time_history = []
-                self.pivots = []
-                self.patterns = {
-                    "mẫu hình tăng để giảm": [
-                        ["HH", "HL", "HH", "HL", "HH"],
-                        ["LH", "HL", "HH", "HL", "HH"],
-                        ["HH", "HH", "HH"],
-                        ["HH", "HL", "HH", "HH"]
-                    ],
-                    "mẫu hình giảm để tăng": [
-                        ["LL", "LL", "LH", "LL"],
-                        ["LL", "LH", "LL", "LH", "LL"],
-                        ["LL", "LL", "LL"],
-                        ["LL", "LH", "LL", "LH", "LL"],
-                        ["LL", "LH", "LL"]
-                    ]
-                }
+            self.max_bars = max_bars
+            self.price_history = []
+            self.time_history = []
+            self.pivots = []
+            self.patterns = {
+                "mẫu hình tăng để giảm": [
+                    ["HH", "HL", "HH", "HL", "HH"],
+                    ["LH", "HL", "HH", "HL", "HH"],
+                    ["HH", "HH", "HH"],
+                    ["HH", "HL", "HH", "HH"]
+                ],
+                "mẫu hình giảm để tăng": [
+                    ["LL", "LL", "LH", "LL"],
+                    ["LL", "LH", "LL", "LH", "LL"],
+                    ["LL", "LL", "LL"],
+                    ["LL", "LH", "LL", "LH", "LL"],
+                    ["LL", "LH", "LL"]
+                ]
+            }
                 # Tạo logger riêng cho pattern analyzer
                 self.logger = logging.getLogger('PatternAnalyzer')
                 self.logger.setLevel(logging.DEBUG)
