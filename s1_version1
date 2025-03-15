@@ -11,6 +11,24 @@ import os
 import sys
 import traceback
 
+def get_vietnam_time(utc_time):
+    """Chuyển đổi thời gian từ UTC sang giờ Việt Nam"""
+    if isinstance(utc_time, str):
+        utc_time = datetime.strptime(utc_time, '%Y-%m-%d %H:%M:%S')
+    vietnam_tz = timezone(timedelta(hours=7))
+    return utc_time.replace(tzinfo=timezone.utc).astimezone(vietnam_tz)
+
+def get_next_5min_mark():
+    """Lấy mốc 5 phút tiếp theo"""
+    now = datetime.now(timezone.utc)
+    minutes = now.minute
+    next_5min = ((minutes // 5) + 1) * 5
+    if next_5min == 60:
+        next_time = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    else:
+        next_time = now.replace(minute=next_5min, second=0, microsecond=0)
+    return next_time
+
 # Thiết lập logging cơ bản trước khi khởi tạo bot
 logging.basicConfig(
     level=logging.DEBUG,
@@ -71,7 +89,8 @@ class PricePatternAnalyzer:
                             break
                     if is_ph:
                         pivots.append(("H", prices[i], i, times[i]))
-                        self.logger.info(f"Found Pivot High: ${prices[i]:,.2f} at {times[i].strftime('%Y-%m-%d %H:%M:%S UTC')}")
+                        vn_time = get_vietnam_time(times[i])
+                        self.logger.info(f"Found Pivot High: ${prices[i]:,.2f} at {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN")
                         continue
 
                     # Kiểm tra Pivot Low
@@ -82,7 +101,8 @@ class PricePatternAnalyzer:
                             break
                     if is_pl:
                         pivots.append(("L", prices[i], i, times[i]))
-                        self.logger.info(f"Found Pivot Low: ${prices[i]:,.2f} at {times[i].strftime('%Y-%m-%d %H:%M:%S UTC')}")
+                        vn_time = get_vietnam_time(times[i])
+                        self.logger.info(f"Found Pivot Low: ${prices[i]:,.2f} at {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN")
 
                 return pivots
 
@@ -143,8 +163,10 @@ class PricePatternAnalyzer:
 
         def analyze(self, new_price, timestamp):
                 """Phân tích giá mới và trả về các mẫu hình tìm thấy"""
+                # Chuyển đổi timestamp sang giờ VN cho logging
+                vn_time = get_vietnam_time(timestamp)
                 # Log mỗi khi có giá mới
-                self.logger.info(f"\n=== Bắt đầu phân tích giá lúc {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')} ===")
+                self.logger.info(f"\n=== Bắt đầu phân tích giá lúc {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN ===")
                 self.logger.info(f"Giá mới: ${new_price:,.2f}")
                 
                 # Thêm giá mới vào lịch sử
@@ -166,10 +188,11 @@ class PricePatternAnalyzer:
                     self.logger.info("=== Kết thúc phân tích ===\n")
                     return []
                     
-                # Log lịch sử giá
+                # Log lịch sử giá với giờ VN
                 self.logger.info("\nLịch sử giá:")
                 for i, (price, time) in enumerate(zip(self.price_history[-5:], self.time_history[-5:]), 1):
-                    self.logger.info(f"{i}. ${price:,.2f} tại {time.strftime('%H:%M:%S')}")
+                    vn_time = get_vietnam_time(time)
+                    self.logger.info(f"{i}. ${price:,.2f} tại {vn_time.strftime('%H:%M:%S')}")
                 
                 # Tìm các điểm pivot
                 self.logger.info("\nTìm kiếm điểm pivot...")
@@ -246,44 +269,48 @@ class PriceAlertBot:
             raise
 
     def monitor_prices(self):
-        logging.info("Bắt đầu theo dõi giá...")
-        last_check = datetime.now(timezone.utc)
-        
-        while True:
-            try:
-                current_time = datetime.now(timezone.utc)
+    logging.info("Bắt đầu theo dõi giá...")
+    
+    while True:
+        try:
+            current_time = datetime.now(timezone.utc)
+            next_time = get_next_5min_mark()
+            wait_seconds = (next_time - current_time).total_seconds()
+            
+            # Đợi đến mốc 5 phút tiếp theo
+            if wait_seconds > 0:
+                time.sleep(wait_seconds)
+            
+            # Lấy giá và phân tích tại mốc thời gian chính xác
+            current_time = datetime.now(timezone.utc)
+            vietnam_time = get_vietnam_time(current_time)
+            
+            # Kiểm tra BTC
+            price = self.get_btc_price()
+            if price:
+                # Phân tích mẫu hình với timestamp
+                patterns = self.btc_analyzer.analyze(float(price), current_time)
+                for pattern in patterns:
+                    message = (
+                        f"🔄 Cảnh báo BTC ({vietnam_time.strftime('%Y-%m-%d %H:%M:%S')} VN)\n"
+                        f"Giá hiện tại: ${float(price):,.2f}\n"
+                        f"Mẫu hình: {pattern}"
+                    )
+                    self.bot.send_message(self.CHAT_ID, message)
+                    logging.info(f"Đã gửi cảnh báo mẫu hình: {pattern}")
                 
-                # Chỉ check mỗi 5 phút
-                if (current_time - last_check).total_seconds() >= 300:  # 300 seconds = 5 minutes
-                    # Kiểm tra BTC
-                    price = self.get_btc_price()
-                    if price:
-                        # Phân tích mẫu hình với timestamp
-                        patterns = self.btc_analyzer.analyze(float(price), current_time)
-                        for pattern in patterns:
-                            message = (
-                                f"🔄 Cảnh báo BTC ({current_time.strftime('%Y-%m-%d %H:%M:%S UTC')})\n"
-                                f"Giá hiện tại: ${float(price):,.2f}\n"
-                                f"Mẫu hình: {pattern}"
-                            )
-                            self.bot.send_message(self.CHAT_ID, message)
-                            logging.info(f"Đã gửi cảnh báo mẫu hình: {pattern}")
-                        
-                        # Kiểm tra giá mục tiêu
-                        if self.gia_muc_tieu['BTC'] and float(price) >= self.gia_muc_tieu['BTC']:
-                            self.bot.send_message(
-                                self.CHAT_ID,
-                                f"🚨 Cảnh báo BTC đạt mục tiêu: ${float(price):,.2f}"
-                            )
-                            self.gia_muc_tieu['BTC'] = None
-                    
-                    last_check = current_time
+                # Kiểm tra giá mục tiêu
+                if self.gia_muc_tieu['BTC'] and float(price) >= self.gia_muc_tieu['BTC']:
+                    self.bot.send_message(
+                        self.CHAT_ID,
+                        f"🚨 Cảnh báo BTC đạt mục tiêu: ${float(price):,.2f}"
+                    )
+                    self.gia_muc_tieu['BTC'] = None
 
-            except Exception as e:
-                logging.error(f"Lỗi theo dõi giá: {str(e)}")
-                logging.error(traceback.format_exc())
+        except Exception as e:
+            logging.error(f"Lỗi theo dõi giá: {str(e)}")
+            logging.error(traceback.format_exc())
 
-            time.sleep(60)  # Vẫn check mỗi phút nhưng chỉ xử lý mỗi 5 phút
     def setup_handlers(self):
         @self.bot.message_handler(commands=['start', 'help'])
         def send_welcome(message):
