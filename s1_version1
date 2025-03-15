@@ -59,67 +59,67 @@ class PricePatternAnalyzer:
                     ["LL", "LH", "LL"]
                 ]
             }
-                # Tạo logger riêng cho pattern analyzer
-                self.logger = logging.getLogger('PatternAnalyzer')
-                self.logger.setLevel(logging.DEBUG)
+            # Tạo logger riêng cho pattern analyzer
+            self.logger = logging.getLogger('PatternAnalyzer')
+            self.logger.setLevel(logging.DEBUG)
                 
-                # Tạo thư mục logs nếu chưa có
-                os.makedirs('logs', exist_ok=True)
+            # Tạo thư mục logs nếu chưa có
+            os.makedirs('logs', exist_ok=True)
                 
-                # Tạo file handler cho pattern analysis
-                pattern_handler = logging.FileHandler(
-                    f'logs/pattern_analysis_{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}.log',
-                    encoding='utf-8'
-                )
-                pattern_handler.setFormatter(
-                    logging.Formatter('%(asctime)s [%(levelname)s] - %(message)s')
-                )
-                self.logger.addHandler(pattern_handler)
-                self.logger.info("=== Pattern Analyzer Started ===")
+            # Tạo file handler cho pattern analysis
+            pattern_handler = logging.FileHandler(
+                f'logs/pattern_analysis_{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}.log',
+                encoding='utf-8'
+            )
+            pattern_handler.setFormatter(
+                logging.Formatter('%(asctime)s [%(levelname)s] - %(message)s')
+            )
+               self.logger.addHandler(pattern_handler)
+               self.logger.info("=== Pattern Analyzer Started ===")
 
         def find_pivots(self, prices, times, lb=5, rb=5):
-                """Tìm các điểm pivot (High và Low) với timestamp"""
-                pivots = []
-                for i in range(lb, len(prices) - rb):
-                    # Kiểm tra Pivot High
-                    is_ph = True
-                    for j in range(i-lb, i+rb+1):
-                        if j != i and prices[j] >= prices[i]:
-                            is_ph = False
-                            break
-                    if is_ph:
-                        pivots.append(("H", prices[i], i, times[i]))
-                        vn_time = get_vietnam_time(times[i])
-                        self.logger.info(f"Found Pivot High: ${prices[i]:,.2f} at {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN")
-                        continue
+            """Tìm các điểm pivot (High và Low) với timestamp"""
+            pivots = []
+            for i in range(lb, len(prices) - rb):
+                # Kiểm tra Pivot High
+                is_ph = True
+                for j in range(i-lb, i+rb+1):
+                    if j != i and prices[j] >= prices[i]:
+                        is_ph = False
+                        break
+                if is_ph:
+                      pivots.append(("H", prices[i], i, times[i]))
+                       vn_time = get_vietnam_time(times[i])
+                      self.logger.info(f"Found Pivot High: ${prices[i]:,.2f} at {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN")
+                      continue
 
-                    # Kiểm tra Pivot Low
-                    is_pl = True
-                    for j in range(i-lb, i+rb+1):
-                        if j != i and prices[j] <= prices[i]:
-                            is_pl = False
-                            break
-                    if is_pl:
-                        pivots.append(("L", prices[i], i, times[i]))
-                        vn_time = get_vietnam_time(times[i])
-                        self.logger.info(f"Found Pivot Low: ${prices[i]:,.2f} at {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN")
+                # Kiểm tra Pivot Low
+                 is_pl = True
+                 for j in range(i-lb, i+rb+1):
+                       if j != i and prices[j] <= prices[i]:
+                         is_pl = False
+                        break
+                  if is_pl:
+                       pivots.append(("L", prices[i], i, times[i]))
+                       vn_time = get_vietnam_time(times[i])
+                      self.logger.info(f"Found Pivot Low: ${prices[i]:,.2f} at {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN")
 
                 return pivots
 
         def classify_pivots(self, pivots):
-                """Phân loại các điểm pivot thành HH, HL, LH, LL với logging"""
-                classified = []
-                for i in range(1, len(pivots)):
-                    current = pivots[i]
-                    previous = pivots[i-1]
+            """Phân loại các điểm pivot thành HH, HL, LH, LL với logging"""
+            classified = []
+            for i in range(1, len(pivots)):
+                current = pivots[i]
+                previous = pivots[i-1]
                             
-                    current_time_vn = get_vietnam_time(current[3])
-                    previous_time_vn = get_vietnam_time(previous[3])
+                current_time_vn = get_vietnam_time(current[3])
+                previous_time_vn = get_vietnam_time(previous[3])
                             
-                    if current[0] == "H":
-                        if current[1] > previous[1]:
-                            classified.append("HH")
-                            self.logger.info(
+                if current[0] == "H":
+                    if current[1] > previous[1]:
+                        classified.append("HH")
+                        self.logger.info(
                                 f"Higher High: ${current[1]:,.2f} at {current_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN " 
                                 f"(Previous: ${previous[1]:,.2f} at {previous_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN)"
                             )
@@ -129,13 +129,13 @@ class PricePatternAnalyzer:
                                 f"Lower High: ${current[1]:,.2f} at {current_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN "
                                 f"(Previous: ${previous[1]:,.2f} at {previous_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN)"
                             )
-                    else:  # current[0] == "L"
-                        if current[1] < previous[1]:
-                            classified.append("LL")
-                            self.logger.info(
-                                f"Lower Low: ${current[1]:,.2f} at {current_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN "
-                                f"(Previous: ${previous[1]:,.2f} at {previous_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN)"
-                            )
+                        else:  # current[0] == "L"
+                            if current[1] < previous[1]:
+                                classified.append("LL")
+                                self.logger.info(
+                                    f"Lower Low: ${current[1]:,.2f} at {current_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN "
+                                    f"(Previous: ${previous[1]:,.2f} at {previous_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN)"
+                                )
                         else:
                             classified.append("HL")
                             self.logger.info(
@@ -146,84 +146,84 @@ class PricePatternAnalyzer:
                 return classified
 
         def find_patterns(self, classified_pivots):
-                """Tìm các mẫu hình đã định nghĩa"""
-                found_patterns = []
+            """Tìm các mẫu hình đã định nghĩa"""
+            found_patterns = []
                 
-                # Chuyển classified_pivots thành chuỗi để dễ so sánh
-                pivot_string = ",".join(classified_pivots)
-                self.logger.debug(f"Analyzing pivot string: {pivot_string}")
+            # Chuyển classified_pivots thành chuỗi để dễ so sánh
+            pivot_string = ",".join(classified_pivots)
+            self.logger.debug(f"Analyzing pivot string: {pivot_string}")
                 
-                # Kiểm tra từng nhóm mẫu hình
-                for pattern_group, patterns in self.patterns.items():
-                    for pattern in patterns:
-                        pattern_string = ",".join(pattern)
-                        if pattern_string in pivot_string:
-                            found_patterns.append(pattern_group)
-                            self.logger.info(f"Found pattern: {pattern_group} (matched: {pattern_string})")
-                            break
+            # Kiểm tra từng nhóm mẫu hình
+            for pattern_group, patterns in self.patterns.items():
+                for pattern in patterns:
+                    pattern_string = ",".join(pattern)
+                    if pattern_string in pivot_string:
+                        found_patterns.append(pattern_group)
+                        self.logger.info(f"Found pattern: {pattern_group} (matched: {pattern_string})")
+                        break
                             
                 return list(set(found_patterns))
 
         def analyze(self, new_price, timestamp):
-                """Phân tích giá mới và trả về các mẫu hình tìm thấy"""
-                # Chuyển đổi timestamp sang giờ VN cho logging
-                vn_time = get_vietnam_time(timestamp)
-                # Log mỗi khi có giá mới
-                self.logger.info(f"\n=== Bắt đầu phân tích giá lúc {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN ===")
-                self.logger.info(f"Giá mới: ${new_price:,.2f}")
+            """Phân tích giá mới và trả về các mẫu hình tìm thấy"""
+            # Chuyển đổi timestamp sang giờ VN cho logging
+            vn_time = get_vietnam_time(timestamp)
+            # Log mỗi khi có giá mới
+            self.logger.info(f"\n=== Bắt đầu phân tích giá lúc {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN ===")
+            self.logger.info(f"Giá mới: ${new_price:,.2f}")
                 
-                # Thêm giá mới vào lịch sử
-                self.price_history.append(new_price)
-                self.time_history.append(timestamp)
+            # Thêm giá mới vào lịch sử
+            self.price_history.append(new_price)
+            self.time_history.append(timestamp)
                 
-                # Log thông tin về dữ liệu
-                self.logger.info(f"Số điểm dữ liệu hiện có: {len(self.price_history)}")
+            # Log thông tin về dữ liệu
+            self.logger.info(f"Số điểm dữ liệu hiện có: {len(self.price_history)}")
                 
-                # Kiểm tra và cắt bớt nếu vượt quá max_bars
-                if len(self.price_history) > self.max_bars:
-                    self.price_history.pop(0)
-                    self.time_history.pop(0)
-                    self.logger.info(f"Đã cắt bớt dữ liệu xuống {self.max_bars} điểm")
+            # Kiểm tra và cắt bớt nếu vượt quá max_bars
+            if len(self.price_history) > self.max_bars:
+                self.price_history.pop(0)
+                self.time_history.pop(0)
+                self.logger.info(f"Đã cắt bớt dữ liệu xuống {self.max_bars} điểm")
                     
-                # Kiểm tra số lượng điểm dữ liệu
-                if len(self.price_history) < 10:
-                    self.logger.info(f"⏳ Đang chờ thêm dữ liệu... (Có: {len(self.price_history)}/10 điểm)")
-                    self.logger.info("=== Kết thúc phân tích ===\n")
-                    return []
-                    
-                # Log lịch sử giá với giờ VN
-                self.logger.info("\nLịch sử giá:")
-                for i, (price, time) in enumerate(zip(self.price_history[-5:], self.time_history[-5:]), 1):
-                    vn_time = get_vietnam_time(time)
-                    self.logger.info(f"{i}. ${price:,.2f} tại {vn_time.strftime('%H:%M:%S')}")
-                
-                # Tìm các điểm pivot
-                self.logger.info("\nTìm kiếm điểm pivot...")
-                pivots = self.find_pivots(self.price_history, self.time_history)
-                if not pivots:
-                    self.logger.info("❌ Không tìm thấy điểm pivot")
-                    self.logger.info("=== Kết thúc phân tích ===\n")
-                    return []
-                
-                # Phân loại các điểm pivot
-                self.logger.info("\nPhân loại các điểm pivot...")
-                classified_pivots = self.classify_pivots(pivots)
-                if not classified_pivots:
-                    self.logger.info("❌ Không có mẫu hình để phân loại")
-                    self.logger.info("=== Kết thúc phân tích ===\n")
-                    return []
-                
-                # Tìm kiếm mẫu hình
-                self.logger.info("\nTìm kiếm mẫu hình...")
-                patterns = self.find_patterns(classified_pivots)
-                
-                if patterns:
-                    self.logger.info(f"✅ Đã tìm thấy mẫu hình: {patterns}")
-                else:
-                    self.logger.info("❌ Không phát hiện mẫu hình")
-                
+            # Kiểm tra số lượng điểm dữ liệu
+            if len(self.price_history) < 10:
+                self.logger.info(f"⏳ Đang chờ thêm dữ liệu... (Có: {len(self.price_history)}/10 điểm)")
                 self.logger.info("=== Kết thúc phân tích ===\n")
-                return patterns
+                return []
+                    
+            # Log lịch sử giá với giờ VN
+            self.logger.info("\nLịch sử giá:")
+            for i, (price, time) in enumerate(zip(self.price_history[-5:], self.time_history[-5:]), 1):
+                vn_time = get_vietnam_time(time)
+                self.logger.info(f"{i}. ${price:,.2f} tại {vn_time.strftime('%H:%M:%S')}")
+                
+            # Tìm các điểm pivot
+            self.logger.info("\nTìm kiếm điểm pivot...")
+            pivots = self.find_pivots(self.price_history, self.time_history)
+            if not pivots:
+                self.logger.info("❌ Không tìm thấy điểm pivot")
+                self.logger.info("=== Kết thúc phân tích ===\n")
+                return []
+                
+            # Phân loại các điểm pivot
+            self.logger.info("\nPhân loại các điểm pivot...")
+            classified_pivots = self.classify_pivots(pivots)
+            if not classified_pivots:
+                self.logger.info("❌ Không có mẫu hình để phân loại")
+                self.logger.info("=== Kết thúc phân tích ===\n")
+                return []
+                
+            # Tìm kiếm mẫu hình
+            self.logger.info("\nTìm kiếm mẫu hình...")
+            patterns = self.find_patterns(classified_pivots)
+                
+            if patterns:
+                self.logger.info(f"✅ Đã tìm thấy mẫu hình: {patterns}")
+            else:
+                self.logger.info("❌ Không phát hiện mẫu hình")
+                
+            self.logger.info("=== Kết thúc phân tích ===\n")
+            return patterns
         
 class PriceAlertBot:
     def __init__(self):
