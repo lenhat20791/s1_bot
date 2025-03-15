@@ -106,44 +106,44 @@ class PricePatternAnalyzer:
 
                 return pivots
 
-                def classify_pivots(self, pivots):
-                        """Phân loại các điểm pivot thành HH, HL, LH, LL với logging"""
-                        classified = []
-                        for i in range(1, len(pivots)):
-                            current = pivots[i]
-                            previous = pivots[i-1]
+        def classify_pivots(self, pivots):
+                """Phân loại các điểm pivot thành HH, HL, LH, LL với logging"""
+                classified = []
+                for i in range(1, len(pivots)):
+                    current = pivots[i]
+                    previous = pivots[i-1]
                             
-                            current_time_vn = get_vietnam_time(current[3])
-                            previous_time_vn = get_vietnam_time(previous[3])
+                    current_time_vn = get_vietnam_time(current[3])
+                    previous_time_vn = get_vietnam_time(previous[3])
                             
-                            if current[0] == "H":
-                                if current[1] > previous[1]:
-                                    classified.append("HH")
-                                    self.logger.info(
-                                        f"Higher High: ${current[1]:,.2f} at {current_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN " 
-                                        f"(Previous: ${previous[1]:,.2f} at {previous_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN)"
-                                    )
-                                else:
-                                    classified.append("LH")
-                                    self.logger.info(
-                                        f"Lower High: ${current[1]:,.2f} at {current_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN "
-                                        f"(Previous: ${previous[1]:,.2f} at {previous_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN)"
-                                    )
-                            else:  # current[0] == "L"
-                                if current[1] < previous[1]:
-                                    classified.append("LL")
-                                    self.logger.info(
-                                        f"Lower Low: ${current[1]:,.2f} at {current_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN "
-                                        f"(Previous: ${previous[1]:,.2f} at {previous_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN)"
-                                    )
-                                else:
-                                    classified.append("HL")
-                                    self.logger.info(
-                                        f"Higher Low: ${current[1]:,.2f} at {current_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN "
-                                        f"(Previous: ${previous[1]:,.2f} at {previous_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN)"
-                                    )
+                    if current[0] == "H":
+                        if current[1] > previous[1]:
+                            classified.append("HH")
+                            self.logger.info(
+                                f"Higher High: ${current[1]:,.2f} at {current_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN " 
+                                f"(Previous: ${previous[1]:,.2f} at {previous_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN)"
+                            )
+                        else:
+                            classified.append("LH")
+                            self.logger.info(
+                                f"Lower High: ${current[1]:,.2f} at {current_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN "
+                                f"(Previous: ${previous[1]:,.2f} at {previous_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN)"
+                            )
+                    else:  # current[0] == "L"
+                        if current[1] < previous[1]:
+                            classified.append("LL")
+                            self.logger.info(
+                                f"Lower Low: ${current[1]:,.2f} at {current_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN "
+                                f"(Previous: ${previous[1]:,.2f} at {previous_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN)"
+                            )
+                        else:
+                            classified.append("HL")
+                            self.logger.info(
+                                f"Higher Low: ${current[1]:,.2f} at {current_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN "
+                                f"(Previous: ${previous[1]:,.2f} at {previous_time_vn.strftime('%Y-%m-%d %H:%M:%S')} VN)"
+                            )
                                     
-                        return classified
+                return classified
 
         def find_patterns(self, classified_pivots):
                 """Tìm các mẫu hình đã định nghĩa"""
@@ -271,7 +271,7 @@ class PriceAlertBot:
             logging.error(traceback.format_exc())
             raise
 
-    def monitor_prices(self):
+def monitor_prices(self):
                 logging.info("Bắt đầu theo dõi giá...")
                 
                 while True:
