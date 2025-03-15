@@ -172,22 +172,22 @@ class PricePatternAnalyzer:
             self.logger.info(f"Giá mới: ${new_price:,.2f}")
                 
         # Thêm giá mới vào lịch sử
-                self.price_history.append(new_price)
-                self.time_history.append(timestamp)
+        self.price_history.append(new_price)
+        self.time_history.append(timestamp)
                 
         # Log thông tin về dữ liệu
-                self.logger.info(f"Số điểm dữ liệu hiện có: {len(self.price_history)}")
-                
+        self.logger.info(f"Số điểm dữ liệu hiện có: {len(self.price_history)}")
+        
         # Kiểm tra và cắt bớt nếu vượt quá max_bars
-                if len(self.price_history) > self.max_bars:
-                    self.price_history.pop(0)
-                    self.time_history.pop(0)
-                    self.logger.info(f"Đã cắt bớt dữ liệu xuống {self.max_bars} điểm")
+        if len(self.price_history) > self.max_bars:
+            self.price_history.pop(0)
+            self.time_history.pop(0)
+            self.logger.info(f"Đã cắt bớt dữ liệu xuống {self.max_bars} điểm")
                     
         # Kiểm tra số lượng điểm dữ liệu
-                if len(self.price_history) < 10:
-                    self.logger.info(f"⏳ Đang chờ thêm dữ liệu... (Có: {len(self.price_history)}/10 điểm)")
-                    self.logger.info("=== Kết thúc phân tích ===\n")
+        if len(self.price_history) < 10:
+            self.logger.info(f"⏳ Đang chờ thêm dữ liệu... (Có: {len(self.price_history)}/10 điểm)")
+            self.logger.info("=== Kết thúc phân tích ===\n")
                     return []
                     
             # Log lịch sử giá với giờ VN
