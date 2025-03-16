@@ -61,26 +61,20 @@ class S1Bot:
         return logger
         
     def find_pivots(self, prices, times, lb=3, rb=3, tolerance=0.0001):
-        """Tìm các điểm pivot (High và Low) với timestamp"""
+        """Tìm các điểm pivot (HH, LL, HL, LH) với timestamp"""
         pivots = []
         for i in range(lb, len(prices) - rb):
-            is_pivot = True
-            for j in range(1, lb + 1):
-                if prices[i] <= prices[i - j] + tolerance or prices[i] <= prices[i + j] + tolerance:
-                    is_pivot = False
-                    break
-            if is_pivot:
-                pivots.append((times[i], prices[i], i, 'High'))
-                continue
-
-            is_pivot = True
-            for j in range(1, lb + 1):
-                if prices[i] >= prices[i - j] - tolerance or prices[i] >= prices[i + j] - tolerance:
-                    is_pivot = False
-                    break
-            if is_pivot:
-                pivots.append((times[i], prices[i], i, 'Low'))
-
+            is_ph = all(prices[i] > prices[i - j] - tolerance and prices[i] > prices[i + j] - tolerance for j in range(1, lb + 1))
+            is_pl = all(prices[i] < prices[i - j] + tolerance and prices[i] < prices[i + j] + tolerance for j in range(1, lb + 1))
+    
+            if is_ph:
+                pivot_type = "HH" if len(pivots) > 0 and prices[i] > max(p[1] for p in pivots if p[3] in ["High", "HH"]) else "High"
+                pivots.append((times[i], prices[i], i, pivot_type))
+            
+            if is_pl:
+                pivot_type = "LL" if len(pivots) > 0 and prices[i] < min(p[1] for p in pivots if p[3] in ["Low", "LL"]) else "Low"
+                pivots.append((times[i], prices[i], i, pivot_type))
+    
         return pivots
 
     def classify_pivots(self, pivots):
