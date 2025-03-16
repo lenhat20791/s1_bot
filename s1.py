@@ -88,9 +88,24 @@ class S1Bot:
     
     def handle_moc_command(self, user_pivots):
         """Xử lý lệnh /moc để cập nhật pivot từ TradingView"""
-        self.pivot_history = []  # Reset pivot cũ
-        self.update_pivot_history(user_pivots)  # Cập nhật pivot mới
+        self.pivot_history = []
+        self.historical_pivots = []  # Reset toàn bộ pivot lịch sử
+        self.update_pivot_history(user_pivots)
         self.logger.info("✅ Đã cập nhật các pivot từ TradingView.")
+
+        # Thêm các pivot từ /moc vào lịch sử giá
+        for pivot in user_pivots:
+            timestamp, price, _, pivot_type = pivot
+            self.add_historical_pivot(pivot_type, timestamp, price)
+    
+        self.logger.info("✅ Đã cập nhật các pivot từ TradingView và lưu vào lịch sử.")
+
+    def add_historical_pivot(self, pivot_type, timestamp, price=None):
+        """Lưu pivot vào lịch sử giá để sử dụng cho các lần so sánh tiếp theo"""
+        if price is not None:
+            self.price_history.append(price)  # Lưu giá vào danh sách lịch sử
+            self.time_history.append(timestamp)  # Lưu timestamp vào danh sách lịch sử
+        self.logger.info(f"📌 Đã ghi nhận {pivot_type}: {timestamp} - Giá: ${price}")
 
     def classify_pivots(self, pivots):
         """Phân loại các điểm pivot"""
