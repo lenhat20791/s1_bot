@@ -280,12 +280,32 @@ class PricePatternAnalyzer:
         def get_historical_price(self, timestamp):
             """Lấy giá từ historical data tại timestamp"""
             try:
+                # Nếu chưa có dữ liệu lịch sử, lấy giá hiện tại
+                if not self.time_history:
+                    current_price = self.get_current_price()
+                    if current_price:
+                        return current_price
+                    return None
+
                 # Tìm index gần nhất với timestamp trong time_history
                 closest_index = min(range(len(self.time_history)), 
                                   key=lambda i: abs(self.time_history[i] - timestamp))
                 return self.price_history[closest_index]
             except Exception as e:
                 self.logger.error(f"Lỗi lấy giá historical: {str(e)}")
+                return None
+        def get_current_price(self):
+            """Lấy giá hiện tại từ Binance"""
+            try:
+                response = requests.get(
+                    'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT',
+                    timeout=10
+                )
+                response.raise_for_status()
+                data = response.json()
+                return float(data['price'])
+            except Exception as e:
+                self.logger.error(f"Lỗi lấy giá hiện tại: {str(e)}")
                 return None
 
         def add_historical_pivot(self, pivot_type, timestamp, price=None):
@@ -300,6 +320,16 @@ class PricePatternAnalyzer:
                         'time': timestamp,
                         'price': price
                     }
+                    # Kiểm tra xem pivot đã tồn tại chưa
+                    for existing_pivot in self.historical_pivots:
+                        if (abs(existing_pivot['time'] - timestamp) < timedelta(minutes=5) and 
+                            existing_pivot['type'] == pivot_type.upper()):
+                            self.logger.warning(
+                                f"Pivot {pivot_type.upper()} đã tồn tại tại "
+                                f"{existing_pivot['time'].strftime('%Y-%m-%d %H:%M:%S')}"
+                            )
+                            return False
+
                     self.historical_pivots.append(pivot)
                     # Sắp xếp theo thời gian
                     self.historical_pivots.sort(key=lambda x: x['time'])
