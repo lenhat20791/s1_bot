@@ -121,6 +121,17 @@ class PricePatternAnalyzer:
                     self.logger.info(
                         f"- Pivot {pivot_name}: ${price:,.2f} tại {vn_time.strftime('%H:%M:%S')}"
                     )
+            # Sau khi thêm pivot mới vào danh sách pivots
+            if len(pivots) >= 15:
+                recent_pivots = pivots[-15:]
+            else:
+                recent_pivots = pivots
+            
+            self.logger.info("Thống kê 15 đỉnh đáy gần nhất:")
+            for pivot_type, price, _, time in recent_pivots:
+                vn_time = get_vietnam_time(time)
+                pivot_name = "High" if pivot_type == "H" else "Low"
+                self.logger.info(f"- Pivot {pivot_name}: ${price:,.2f} tại {vn_time.strftime('%H:%M:%S')}")
 
             return pivots
 
@@ -452,15 +463,27 @@ class PriceAlertBot:
                 if price:
                     # Phân tích mẫu hình với timestamp
                     patterns = self.btc_analyzer.analyze(float(price), current_time)
-                    for pattern in patterns:
-                        message = (
-                            f"🔄 Cảnh báo BTC ({vietnam_time.strftime('%Y-%m-%d %H:%M:%S')} VN)\n"
-                            f"Giá hiện tại: ${float(price):,.2f}\n"
-                            f"Mẫu hình: {pattern}"
-                        )
-                        self.bot.send_message(self.CHAT_ID, message)
-                        logging.info(f"Đã gửi cảnh báo mẫu hình: {pattern}")
-                            
+                    
+                    if patterns:
+                        # Thống kê 15 điểm pivot gần nhất trước khi gửi cảnh báo
+                        log_msg = "📊 Thống kê 15 đỉnh đáy gần nhất:\n"
+                        for idx, (ptype, t, p_price) in enumerate(self.pivot_history[::-1]):
+                            log_msg += f"{idx+1}. {ptype}: {t} (${p_price})\n"
+                        
+                        # Ghi log lịch sử pivot
+                        logging.info(log_msg.strip())
+                    
+                        # Gửi cảnh báo mẫu hình kèm thống kê pivot
+                        for pattern in patterns:
+                            message = (
+                                f"🔄 Cảnh báo BTC ({vietnam_time.strftime('%Y-%m-%d %H:%M:%S')} VN)\n"
+                                f"Giá hiện tại: ${float(price):,.2f}\n"
+                                f"Mẫu hình: {pattern}\n\n"
+                                f"{log_msg.strip()}"
+                            )
+                            self.bot.send_message(self.CHAT_ID, message)
+                            logging.info(f"Đã gửi cảnh báo mẫu hình: {pattern}")
+
                     # Kiểm tra giá mục tiêu
                     if self.gia_muc_tieu['BTC'] and float(price) >= self.gia_muc_tieu['BTC']:
                         self.bot.send_message(
