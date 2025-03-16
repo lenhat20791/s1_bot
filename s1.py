@@ -39,52 +39,93 @@ logging.basicConfig(
 )
 
 class S1Bot:
+    class S1Bot:
     def __init__(self):
-        """
-        Khởi tạo bot với các thuộc tính cần thiết.
-        """
-        self.last_pattern = None
-        self.btc_analyzer = BTCAnalyzer()  # Giả sử có lớp BTCAnalyzer để phân tích Bitcoin
-
-    def find_pivots(self, prices, times, tolerance=0.0001):
-        """
-        Tìm các điểm pivot trong dữ liệu giá.
+        self.price_history = []
+        self.time_history = []
+        self.logger = self.setup_logger()
+        self.btc_analyzer = BTCAnalyzer()
         
-        :param prices: Danh sách giá.
-        :param times: Danh sách thời gian tương ứng với giá.
-        :param tolerance: Ngưỡng để xác định pivot.
-        :return: Danh sách các điểm pivot.
-        """
+    def setup_logger(self):
+        import logging
+        logger = logging.getLogger('S1Bot')
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        return logger
+        
+    def find_pivots(self, prices, times, lb=3, rb=3, tolerance=0.0001):
+        """Tìm các điểm pivot (High và Low) với timestamp"""
         pivots = []
-        for i in range(1, len(prices) - 1):
-            if prices[i] > prices[i - 1] and prices[i] > prices[i + 1]:
-                pivots.append(("HH", times[i], prices[i]))
-            elif prices[i] < prices[i - 1] and prices[i] < prices[i + 1]:
-                pivots.append(("LL", times[i], prices[i]))
+        for i in range(lb, len(prices) - rb):
+            is_pivot = True
+            for j in range(1, lb + 1):
+                if prices[i] <= prices[i - j] + tolerance or prices[i] <= prices[i + j] + tolerance:
+                    is_pivot = False
+                    break
+            if is_pivot:
+                pivots.append((times[i], prices[i], i, 'High'))
+                continue
+
+            is_pivot = True
+            for j in range(1, lb + 1):
+                if prices[i] >= prices[i - j] - tolerance or prices[i] >= prices[i + j] - tolerance:
+                    is_pivot = False
+                    break
+            if is_pivot:
+                pivots.append((times[i], prices[i], i, 'Low'))
+
         return pivots
 
-    def analyze_patterns(self, price, timestamp):
-        """
-        Phân tích các mẫu hình giá.
+    def classify_pivots(self, pivots):
+        """Phân loại các điểm pivot"""
+        classified_pivots = []
+        for pivot in pivots:
+            if pivot[3] == 'High':
+                classified_pivots.append((pivot[0], pivot[1], pivot[2], 'HH'))
+            elif pivot[3] == 'Low':
+                classified_pivots.append((pivot[0], pivot[1], pivot[2], 'LL'))
+        return classified_pivots
+    def find_patterns(self, classified_pivots):
+        """Tìm kiếm mẫu hình dựa trên các điểm pivot đã phân loại"""
+        patterns = []
+        # Giả sử bạn có logic để tìm mẫu hình từ classified_pivots
+        return patterns
         
-        :param price: Giá hiện tại.
-        :param timestamp: Thời gian hiện tại.
-        :return: Danh sách các mẫu hình được phát hiện.
-        """
-        patterns = self.btc_analyzer.analyze(price, timestamp)
+    def analyze_patterns(self):
+        """Phân tích mẫu hình dựa trên pivot points"""
+        self.logger.info("\nTìm kiếm điểm pivot...")
+        pivots = self.find_pivots(self.price_history, self.time_history)
+        if not pivots:
+            self.logger.info("❌ Không tìm thấy điểm pivot")
+            return []
+
+        self.logger.info("\nPhân loại các điểm pivot...")
+        classified_pivots = self.classify_pivots(pivots)
+        if not classified_pivots:
+            self.logger.info("❌ Không có mẫu hình để phân loại")
+            return []
+
+        self.logger.info("\nTìm kiếm mẫu hình...")
+        patterns = self.find_patterns(classified_pivots)
+
+        if patterns:
+            self.logger.info(f"✅ Đã tìm thấy mẫu hình: {patterns}")
+        else:
+            self.logger.info("❌ Không phát hiện mẫu hình")
+
         return patterns
 
     def should_send_alert(self, new_patterns):
-        """
-        Xác định xem có nên gửi cảnh báo hay không.
-        
-        :param new_patterns: Danh sách các mẫu hình mới được phát hiện.
-        :return: True nếu nên gửi cảnh báo, ngược lại False.
-        """
-        if self.last_pattern is None or self.last_pattern not in new_patterns:
-            self.last_pattern = new_patterns[0] if new_patterns else None
-            return True
-        return False
+        """Xác định xem có nên gửi cảnh báo dựa trên các mẫu hình mới"""
+        if not new_patterns:
+            return False
+        if hasattr(self, 'last_pattern') and self.last_pattern == new_patterns[-1]:
+            return False
+        self.last_pattern = new_patterns[-1]
+        return True
 
 class PricePatternAnalyzer:
         def __init__(self, max_bars=200):
