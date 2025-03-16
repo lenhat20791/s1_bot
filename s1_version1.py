@@ -81,7 +81,9 @@ class PricePatternAnalyzer:
             self.logger.addHandler(pattern_handler)
             self.logger.info("=== Pattern Analyzer Started ===")
 
-        def find_pivots(self, prices, times, lb=3, rb=3, tolerance=0.0001):
+        def find_pivots(
+            self, prices: list[float], times: list[str], lb: int = 3, rb: int = 3, tolerance: float = 0.0001
+        ) -> list[tuple[str, float, int, str]]:
             """Tìm các điểm pivot (High và Low) với timestamp"""
             pivots = []
             for i in range(lb, len(prices) - rb):
@@ -264,25 +266,27 @@ class PricePatternAnalyzer:
                 else:
                     self.logger.info(f"{i}. {vn_time.strftime('%H:%M:%S')}: ${price:,.2f}")
 
-        def analyze_patterns(self):
+        def analyze_patterns(self) -> list[str]:
             """Phân tích mẫu hình dựa trên pivot points"""
             # Tìm các điểm pivot
             self.logger.info("\nTìm kiếm điểm pivot...")
-            pivots = self.find_pivots(self.price_history, self.time_history)
+            pivots: list[tuple[str, float, int, str]] = self.find_pivots(self.price_history, self.time_history)
+
             if not pivots:
                 self.logger.info("❌ Không tìm thấy điểm pivot")
                 return []
         
             # Phân loại các điểm pivot
             self.logger.info("\nPhân loại các điểm pivot...")
-            classified_pivots = self.classify_pivots(pivots)
+            classified_pivots: dict[str, list[tuple[str, float, int, str]]] = self.classify_pivots(pivots)
+ 
             if not classified_pivots:
                 self.logger.info("❌ Không có mẫu hình để phân loại")
                 return []
         
             # Tìm kiếm mẫu hình
             self.logger.info("\nTìm kiếm mẫu hình...")
-            patterns = self.find_patterns(classified_pivots)
+            patterns: list[str] = self.find_patterns(classified_pivots)
         
             if patterns:
                 self.logger.info(f"✅ Đã tìm thấy mẫu hình: {patterns}")
