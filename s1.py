@@ -63,21 +63,31 @@ class S1Bot:
         
     def find_pivots(self, prices, times, lb=3, rb=3, tolerance=0.0001):
         """Tìm các điểm pivot (HH, LL, HL, LH) với timestamp"""
+        # ✅ Lấy các giá trị LH/HH và LL/HL từ pivot lịch sử
+        if self.historical_pivots:
+            historical_high = max(p[1] for p in self.historical_pivots if p[0] in ["LH", "HH"])
+            historical_low = min(p[1] for p in self.historical_pivots if p[0] in ["LL", "HL"])
+            self.logger.info(f"📌 Đang sử dụng giá LH cao nhất: {historical_high} và LL thấp nhất: {historical_low} để so sánh.")
+        else:
+            historical_high, historical_low = None, None
+            self.logger.info("⚠ Không có pivot lịch sử nào để so sánh.")
+
         pivots = []
         for i in range(lb, len(prices) - rb):
+            # ✅ Kiểm tra Pivot High
             is_ph = all(prices[i] > prices[i - j] and prices[i] > prices[i + j] for j in range(1, lb + 1))
             if is_ph:
-                pivot_type = "HH" if pivots and prices[i] > max(p[1] for p in pivots if p[3] in ["High", "HH"]) else "High"
+                pivot_type = "HH" if historical_high and prices[i] > historical_high else "High"
                 pivots.append((times[i], prices[i], i, pivot_type))
-                self.add_historical_pivot(pivot_type, times[i], prices[i])  # ✅ Thêm vào đây
-            continue
-            
+                self.add_historical_pivot(pivot_type, times[i], prices[i])  # ✅ Ghi vào lịch sử
+
+            # ✅ Kiểm tra Pivot Low
             is_pl = all(prices[i] < prices[i - j] and prices[i] < prices[i + j] for j in range(1, lb + 1))
             if is_pl:
-                pivot_type = "LL" if pivots and prices[i] < min(p[1] for p in pivots if p[3] in ["Low", "LL"]) else "Low"
+                pivot_type = "LL" if historical_low and prices[i] < historical_low else "Low"
                 pivots.append((times[i], prices[i], i, pivot_type))
-                self.add_historical_pivot(pivot_type, times[i], prices[i])  # ✅ Thêm vào đây
-    
+                self.add_historical_pivot(pivot_type, times[i], prices[i])  # ✅ Ghi vào lịch sử
+            
         self.update_pivot_history(pivots)
         return pivots
         
