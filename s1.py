@@ -12,7 +12,7 @@ import sys
 import traceback
 from telegram import Update, Bot
 from telegram.ext import CommandHandler
-from telegram.ext import Application, CommandHandler, CallbackContext
+from telegram.ext import Updater, CommandHandler, CallbackContext, Dispatcher
 import logging
 import sys
 
@@ -160,19 +160,37 @@ class S1Bot:
         for idx, (t, p, _, type) in enumerate(self.pivot_history[::-1]):
             self.logger.info(f"{idx+1}. {type}: {t} (${p})")
     
-    def handle_moc_command(self, user_pivots):
-        """Xử lý lệnh /moc để cập nhật pivot từ TradingView"""
-        self.pivot_history = []
-        self.historical_pivots = []  # Reset toàn bộ pivot lịch sử
-        self.update_pivot_history(user_pivots)
-        self.logger.info("✅ Đã cập nhật các pivot từ TradingView.")
-
-        # Thêm các pivot từ /moc vào lịch sử giá
-        for pivot in user_pivots:
-            timestamp, price, _, pivot_type = pivot
-            self.add_historical_pivot(pivot_type, timestamp, price)
+    def handle_moc(self, update: Update, context: CallbackContext):
+        """ Xử lý lệnh /moc để lưu LH, HL, LL, HH từ người dùng """
+        args = context.args
+        if len(args) != 3:
+            update.message.reply_text("⚠ Sai cú pháp! Dùng: /moc <loại_mốc> <thời_gian> <giá>")
+            return
     
-        self.logger.info("✅ Đã cập nhật các pivot từ TradingView và lưu vào lịch sử.")
+        pivot_type = args[0].upper()
+        time_input = args[1]
+        price_str = args[2]
+    
+        if pivot_type not in ["LH", "HL", "LL", "HH"]:
+            update.message.reply_text("⚠ Loại mốc không hợp lệ! Chỉ dùng LH, HL, LL, HH.")
+            return
+    
+        try:
+            timestamp = datetime.strptime(time_input, "%H:%M").replace(tzinfo=timezone.utc)
+        except ValueError:
+            update.message.reply_text("⚠ Định dạng thời gian không hợp lệ! Dùng HH:MM.")
+            return
+    
+        try:
+            price = float(price_str.replace(",", "").replace("$", ""))
+        except ValueError:
+            update.message.reply_text("⚠ Giá không hợp lệ! Hãy nhập số.")
+            return
+    
+        self.pivot_history.append((pivot_type, timestamp.strftime('%H:%M'), price))
+        self.pivot_history = self.pivot_history[-15:]  # Giữ tối đa 15 điểm
+    
+        update.message.reply_text(f"✅ Đã lưu {pivot_type} tại {timestamp.strftime('%H:%M')}: ${price:.2f}")
 
     def add_historical_pivot(self, pivot_type, timestamp, price=None):
         """Thêm pivot vào lịch sử, tránh trùng lặp"""
@@ -942,7 +960,9 @@ class PriceAlertBot:
 if __name__ == "__main__":
     try:
         token = "7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8"  # ✅ Thay thế bằng token thực tế
-        bot = S1Bot(token)  # ✅ Tạo instance của S1Bot
+        bot = S1Bot(token)
+        bot.updater.start_polling()
+        bot.updater.idle()
         bot.run()  # ✅ Khởi động bot
         logging.info("🤖 Bot đã khởi động thành công!")
         
