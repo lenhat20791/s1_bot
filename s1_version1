@@ -44,6 +44,8 @@ class PricePatternAnalyzer:
             self.price_history = []
             self.time_history = []
             self.pivots = []
+            self.historical_pivots = []  # Lưu các pivot points được cung cấp
+            self.last_sync_time = None   # Thời điểm đồng bộ cuối cùng
             self.patterns = {
                 "mẫu hình tăng để giảm": [
                     ["HH", "HL", "HH", "HL", "HH"],
@@ -269,6 +271,82 @@ class PricePatternAnalyzer:
             else:
                 self.logger.info("❌ Không phát hiện mẫu hình")
         
+            return patterns
+        def get_historical_price(self, timestamp):
+            """Lấy giá từ historical data tại timestamp"""
+            try:
+                # Tìm index gần nhất với timestamp trong time_history
+                closest_index = min(range(len(self.time_history)), 
+                                  key=lambda i: abs(self.time_history[i] - timestamp))
+                return self.price_history[closest_index]
+            except Exception as e:
+                self.logger.error(f"Lỗi lấy giá historical: {str(e)}")
+                return None
+
+        def add_historical_pivot(self, pivot_type, timestamp, price=None):
+            """Thêm một pivot point từ lịch sử"""
+            try:
+                if price is None:
+                    price = self.get_historical_price(timestamp)
+                
+                if price:
+                    pivot = {
+                        'type': pivot_type.upper(),  # HH, HL, LH, LL
+                        'time': timestamp,
+                        'price': price
+                    }
+                    self.historical_pivots.append(pivot)
+                    # Sắp xếp theo thời gian
+                    self.historical_pivots.sort(key=lambda x: x['time'])
+                    self.logger.info(
+                        f"Đã thêm {pivot_type.upper()} tại "
+                        f"{timestamp.strftime('%Y-%m-%d %H:%M:%S')} (${price:,.2f})"
+                    )
+                    return True
+                else:
+                    self.logger.error(f"Không thể thêm pivot point: không tìm thấy giá tại {timestamp}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Lỗi thêm historical pivot: {str(e)}")
+                return False
+
+        def analyze_with_historical(self, new_price, timestamp):
+            """Phân tích dựa trên historical pivots"""
+            patterns = []
+            
+            try:
+                if not self.historical_pivots:
+                    return patterns
+        
+                last_pivot = self.historical_pivots[-1]
+                pivot_price = last_pivot['price']
+                pivot_type = last_pivot['type']
+                
+                # So sánh với pivot point cuối cùng
+                if pivot_type in ['HH', 'LH']:
+                    if new_price > pivot_price:
+                        self.logger.info(
+                            f"Phát hiện HH mới: ${new_price:,.2f} > ${pivot_price:,.2f}"
+                        )
+                        patterns.append("mẫu hình tăng để giảm")
+                    elif new_price < pivot_price:
+                        self.logger.info(
+                            f"Phát hiện HL mới: ${new_price:,.2f} < ${pivot_price:,.2f}"
+                        )
+                elif pivot_type in ['LL', 'HL']:
+                    if new_price < pivot_price:
+                        self.logger.info(
+                            f"Phát hiện LL mới: ${new_price:,.2f} < ${pivot_price:,.2f}"
+                        )
+                        patterns.append("mẫu hình giảm để tăng")
+                    elif new_price > pivot_price:
+                        self.logger.info(
+                            f"Phát hiện LH mới: ${new_price:,.2f} > ${pivot_price:,.2f}"
+                        )
+        
+            except Exception as e:
+                self.logger.error(f"Lỗi phân tích historical: {str(e)}")
+            
             return patterns
         
 class PriceAlertBot:
