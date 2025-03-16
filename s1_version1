@@ -77,35 +77,37 @@ class PricePatternAnalyzer:
             self.logger.addHandler(pattern_handler)
             self.logger.info("=== Pattern Analyzer Started ===")
 
-        def find_pivots(self, prices, times, lb=5, rb=5):
+        def find_pivots(self, prices, times, lb=3, rb=3, tolerance=0.0001):
             """Tìm các điểm pivot (High và Low) với timestamp"""
             pivots = []
             for i in range(lb, len(prices) - rb):
+                current_price = prices[i]
+
                 # Kiểm tra Pivot High
                 is_ph = True
                 for j in range(i-lb, i+rb+1):
-                    if j != i and prices[j] >= prices[i]:
+                    if j != i and prices[j] >= (current_price * (1 - tolerance)):
                         is_ph = False
                         break
                 if is_ph:
                     pivots.append(("H", prices[i], i, times[i]))
                     vn_time = get_vietnam_time(times[i])
                     self.logger.info(
-                        f"Found Pivot High: ${prices[i]:,.2f} at {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN"
+                        f"Found Pivot High: ${current_price:,.2f} at {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN"
                     )
                     continue
 
                 # Kiểm tra Pivot Low
                 is_pl = True
                 for j in range(i-lb, i+rb+1):
-                    if j != i and prices[j] <= prices[i]:
+                    if j != i and prices[j] <= (current_price * (1 + tolerance)):
                         is_pl = False
                         break
                 if is_pl:
                     pivots.append(("L", prices[i], i, times[i]))
                     vn_time = get_vietnam_time(times[i])
                     self.logger.info(
-                        f"Found Pivot Low: ${prices[i]:,.2f} at {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN"
+                        f"Found Pivot Low: ${current_price:,.2f} at {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN"
                     )
             # Thêm logging tổng hợp
             if pivots:
