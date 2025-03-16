@@ -224,7 +224,12 @@ class PricePatternAnalyzer:
             self.log_recent_prices()
         
             # Phân tích patterns
-            patterns = self.analyze_patterns()
+            if self.historical_pivots:
+                # Sử dụng historical_pivots làm cơ sở
+                patterns = self.analyze_with_historical(new_price, timestamp)
+            else:
+                # Phân tích thông thường
+                patterns = self.analyze_patterns()
         
             self.logger.info("=== Kết thúc phân tích ===\n")
             return patterns
@@ -437,6 +442,21 @@ class PriceAlertBot:
                 logging.error(f"Lỗi theo dõi giá: {str(e)}")
                 logging.error(traceback.format_exc())
 
+    def parse_time(self, time_str):
+        """Chuyển đổi chuỗi thời gian (vd: 9h40) thành datetime"""
+        try:
+            hour, minute = map(int, time_str.replace('h', ':').split(':'))
+            now = datetime.now(timezone.utc)
+            result = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            
+            # Nếu thời gian đã qua trong ngày, lấy của ngày hôm trước
+            if result > now:
+                result -= timedelta(days=1)
+            
+            return result
+        except:
+            raise ValueError("Định dạng thời gian không đúng. Sử dụng format: 9h40")
+
     def setup_handlers(self):
         @self.bot.message_handler(commands=['start', 'help'])
         def send_welcome(message):
@@ -444,7 +464,59 @@ class PriceAlertBot:
                 "Xin chào! Tôi là bot cảnh báo giá.\n"
                 "Sử dụng /btc để đặt cảnh báo BTC\n"
                 "Sử dụng /aud để đặt cảnh báo AUD\n"
+                "Sử dụng /moc để thêm mốc pivot (ví dụ: /moc btc lh 9h40 hl 9h55)\n"
                 "Sử dụng /reset để xóa tất cả cảnh báo")
+
+        @self.bot.message_handler(commands=['moc'])
+        def handle_moc(message):
+            try:
+                # Phân tích cú pháp lệnh
+                parts = message.text.split()
+                if len(parts) < 4 or len(parts) % 2 != 0:
+                    self.bot.reply_to(message, 
+                        "Cú pháp không đúng!\n"
+                        "Ví dụ: /moc btc lh 9h40 hl 9h55")
+                    return
+        
+                symbol = parts[1].upper()
+                if symbol != 'BTC':
+                    self.bot.reply_to(message, "Hiện tại chỉ hỗ trợ BTC")
+                    return
+        
+                pivots = []
+                # Xử lý từng cặp pivot_type và time
+                for i in range(2, len(parts), 2):
+                    pivot_type = parts[i].upper()
+                    time_str = parts[i+1]
+                    
+                    # Chuyển đổi thời gian
+                    try:
+                        time_obj = self.parse_time(time_str)
+                        pivots.append((pivot_type, time_obj))
+                    except ValueError as e:
+                        self.bot.reply_to(message, f"Lỗi định dạng thời gian: {str(e)}")
+                        return
+        
+                # Thêm các pivot points vào analyzer
+                added_count = 0
+                for pivot_type, timestamp in pivots:
+                    if self.btc_analyzer.add_historical_pivot(pivot_type, timestamp):
+                        added_count += 1
+        
+                # Phản hồi
+                if added_count > 0:
+                    response = f"Đã thêm {added_count} mốc cho {symbol}:\n"
+                    for pivot_type, timestamp in pivots:
+                        response += f"- {pivot_type}: {timestamp.strftime('%H:%M')}\n"
+                else:
+                    response = "Không thể thêm các mốc. Vui lòng kiểm tra log để biết thêm chi tiết."
+                
+                self.bot.reply_to(message, response)
+        
+            except Exception as e:
+                logging.error(f"Lỗi xử lý lệnh moc: {str(e)}")
+                logging.error(traceback.format_exc())
+                self.bot.reply_to(message, f"Có lỗi xảy ra: {str(e)}")
 
         @self.bot.message_handler(commands=['reset'])
         def handle_reset(message):
