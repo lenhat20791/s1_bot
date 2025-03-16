@@ -461,10 +461,19 @@ class PriceAlertBot:
                 # Kiểm tra BTC
                 price = self.get_btc_price()
                 if price:
+                    # Thêm biến lưu mẫu hình cuối cùng (chỉ cần khai báo một lần trong __init__)
+                    if not hasattr(self, 'last_pattern'):
+                        self.last_pattern = None
+                    
                     # Phân tích mẫu hình với timestamp
                     patterns = self.btc_analyzer.analyze(float(price), current_time)
+
+                    # Kiểm tra và gửi cảnh báo nếu mẫu hình mới xuất hiện
+                    new_patterns = [pattern for pattern in patterns if pattern != self.last_pattern]
+                
+                    if new_patterns:
+                        self.last_pattern = new_patterns[-1]  # Lưu mẫu hình mới nhất
                     
-                    if patterns:
                         # Thống kê 15 điểm pivot gần nhất trước khi gửi cảnh báo
                         log_msg = "📊 Thống kê 15 đỉnh đáy gần nhất:\n"
                         for idx, (ptype, t, p_price) in enumerate(self.pivot_history[::-1]):
@@ -474,15 +483,16 @@ class PriceAlertBot:
                         logging.info(log_msg.strip())
                     
                         # Gửi cảnh báo mẫu hình kèm thống kê pivot
-                        for pattern in patterns:
-                            message = (
-                                f"🔄 Cảnh báo BTC ({vietnam_time.strftime('%Y-%m-%d %H:%M:%S')} VN)\n"
-                                f"Giá hiện tại: ${float(price):,.2f}\n"
-                                f"Mẫu hình: {pattern}\n\n"
-                                f"{log_msg.strip()}"
-                            )
-                            self.bot.send_message(self.CHAT_ID, message)
-                            logging.info(f"Đã gửi cảnh báo mẫu hình: {pattern}")
+                        message = (
+                            f"🔄 Cảnh báo BTC ({vietnam_time.strftime('%Y-%m-%d %H:%M:%S')} VN)\n"
+                            f"Giá hiện tại: ${float(price):,.2f}\n"
+                            f"Mẫu hình: {pattern}\n\n"
+                            f"{log_msg.strip()}"
+                        )
+                        self.bot.send_message(self.CHAT_ID, message)
+                        logging.info(f"📢Đã gửi cảnh báo mẫu hình: {self.last_pattern}")
+                    else:
+                        logging.info(f"⚠ Mẫu hình không thay đổi, không gửi cảnh báo.")
 
                     # Kiểm tra giá mục tiêu
                     if self.gia_muc_tieu['BTC'] and float(price) >= self.gia_muc_tieu['BTC']:
