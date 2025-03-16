@@ -38,6 +38,10 @@ logging.basicConfig(
     ]
 )
 
+class BTCAnalyzer:
+    def analyze(self, price, timestamp):
+        return ["Mẫu hình giả lập"]  # Trả về danh sách giả lập để kiểm thử
+
 class S1Bot:
     def __init__(self):
         print("Bot khởi tạo")
