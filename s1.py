@@ -12,7 +12,7 @@ import sys
 import traceback
 from telegram import Update
 from telegram.ext import CommandHandler
-from telegram.ext import Updater, Dispatcher
+from telegram.ext import Application, CommandHandler, CallbackContext
 
 
 def get_vietnam_time(utc_time):
@@ -87,13 +87,13 @@ class S1Bot:
         self.pivot_history = []  # Lưu tối đa 15 điểm pivot gần nhất (HH, HL, LH, LL)
         self.logger = self.setup_logger()
         self.btc_analyzer = BTCAnalyzer()
-        """Khởi tạo bot Telegram"""
-        self.token = token
-        self.updater = Updater(token, use_context=True)
-        self.dispatcher: Dispatcher = self.updater.dispatcher  # ✅ Tạo dispatcher
-        self.pivot_history = []  # ✅ Lưu lịch sử pivot
-        # Thêm handler cho lệnh /moc
-        self.dispatcher.add_handler(CommandHandler("moc", handle_moc))
+
+        """Khởi tạo bot Telegram với Application (v20+)"""
+        self.token = "7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8"
+        self.application = Application.builder().token(self.token).build()
+
+        """Thêm CommandHandler cho lệnh /moc"""
+        self.application.add_handler(CommandHandler("moc", self.handle_moc))
         
     def setup_logger(self):
         import logging
@@ -778,14 +778,16 @@ class PriceAlertBot:
 
         def handle_moc(self, message):
             """ Xử lý lệnh /moc để lưu LH, HL do người dùng nhập """
-            data = message.text.split()
-            if len(data) == 4 and data[1].lower() in ["lh", "hl", "ll", "hh"]:
-                time_input = data[2]
-                price = float(data[3])
-                self.pivot_history.append((data[1].upper(), time_input, price))
+            data = context.args
+            if len(data) == 3 and data[0].upper() in ["LH", "HL", "LL", "HH"]:
+                pivot_type = data[0].upper()
+                time_input = data[1]
+                price = float(data[2])
+                self.pivot_history.append((pivot_type, time_input, price))
                 self.pivot_history = self.pivot_history[-15:]  # Giữ 15 giá trị gần nhất
-                self.bot.send_message(message.chat.id, f"✅ Đã lưu {data[1].upper()} tại {time_input}: ${price}")
-
+                update.message.reply_text(f"✅ Đã lưu {pivot_type} tại {time_input}: ${price}")
+            else:
+                update.message.reply_text("❌ Sai cú pháp! Dùng: /moc <LH|HL|LL|HH> <thời gian> <giá>")
         @self.bot.message_handler(commands=['reset'])
         def handle_reset(message):
             try:
@@ -926,20 +928,16 @@ class PriceAlertBot:
 
 if __name__ == "__main__":
     try:
-        token = "7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8"  # 🔹 Thay thế bằng token thực tế
-        bot = S1Bot(token)  # 🔹 Tạo instance của S1Bot
-        bot.updater.start_polling()  # 🔹 Bắt đầu bot
+        token = "7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8"  # ✅ Thay thế bằng token thực tế
+        bot = S1Bot(token)  # ✅ Tạo instance của S1Bot
+        bot.application.run_polling()  # ✅ Chạy bot đúng cách
         logging.info("🤖 Bot đã khởi động thành công!")
         
-        bot.updater.idle()  # 🔹 Giữ bot chạy liên tục
-
     except KeyboardInterrupt:
         logging.info("🛑 Dừng bot bởi người dùng (Ctrl + C)")
-        bot.updater.stop()  # 🔹 Dừng bot đúng cách
         sys.exit(0)
 
     except Exception as e:
         logging.error(f"❌ Lỗi không xác định: {str(e)}")
         logging.error(traceback.format_exc())
         sys.exit(1)
-
