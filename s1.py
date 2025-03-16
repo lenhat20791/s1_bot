@@ -82,7 +82,7 @@ class BTCAnalyzer:
         return ["Mẫu hình giả lập"]  # Trả về danh sách giả lập để kiểm thử
 
 class S1Bot:
-    def __init__(self):
+    def __init__(self, token):
         print("Bot khởi tạo")
         self.token = token
         self.price_history = []  # Lưu lịch sử giá
