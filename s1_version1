@@ -44,6 +44,7 @@ class PricePatternAnalyzer:
             self.price_history = []
             self.time_history = []
             self.pivots = []
+            self.last_pattern = None
             self.pivot_history = []  # Lưu tối đa 15 đỉnh đáy gần nhất
             self.historical_pivots = []  # Lưu các pivot points được cung cấp
             self.last_sync_time = None   # Thời điểm đồng bộ cuối cùng
