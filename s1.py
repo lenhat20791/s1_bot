@@ -69,12 +69,15 @@ class S1Bot:
             if is_ph:
                 pivot_type = "HH" if pivots and prices[i] > max(p[1] for p in pivots if p[3] in ["High", "HH"]) else "High"
                 pivots.append((times[i], prices[i], i, pivot_type))
-
+                self.add_historical_pivot(pivot_type, times[i], prices[i])  # ✅ Thêm vào đây
+            continue
+            
             is_pl = all(prices[i] < prices[i - j] and prices[i] < prices[i + j] for j in range(1, lb + 1))
             if is_pl:
                 pivot_type = "LL" if pivots and prices[i] < min(p[1] for p in pivots if p[3] in ["Low", "LL"]) else "Low"
                 pivots.append((times[i], prices[i], i, pivot_type))
-        
+                self.add_historical_pivot(pivot_type, times[i], prices[i])  # ✅ Thêm vào đây
+    
         self.update_pivot_history(pivots)
         return pivots
         
