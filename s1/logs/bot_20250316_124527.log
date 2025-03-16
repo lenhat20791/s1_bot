@@ -1,0 +1,28 @@
+2025-03-16 19:45:27,804 [INFO] MainThread - s1.py:568 - === KHỞI TẠO BOT ===
+2025-03-16 19:45:27,805 [INFO] MainThread - s1.py:571 - Đang khởi tạo bot instance...
+2025-03-16 19:45:27,810 [DEBUG] MainThread - connectionpool.py:1049 - Starting new HTTPS connection (1): api.telegram.org:443
+2025-03-16 19:45:28,666 [DEBUG] MainThread - connectionpool.py:544 - https://api.telegram.org:443 "GET /bot7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8/getMe HTTP/1.1" 200 260
+2025-03-16 19:45:28,668 [INFO] MainThread - s1.py:576 - Kết nối thành công tới bot: CryptoAlexis_bot
+2025-03-16 19:45:28,672 [INFO] MainThread - s1.py:227 - === Pattern Analyzer Started ===
+2025-03-16 19:45:28,673 [INFO] MainThread - s1.py:588 - Khởi tạo bot thành công
+2025-03-16 19:45:28,675 [INFO] PriceMonitor - s1.py:596 - Bắt đầu theo dõi giá...
+2025-03-16 19:45:28,675 [INFO] MainThread - s1.py:869 - Đã khởi động thread theo dõi giá
+2025-03-16 19:45:29,226 [DEBUG] MainThread - connectionpool.py:544 - https://api.telegram.org:443 "POST /bot7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8/sendMessage?chat_id=7662080576&text=Bot+%C4%91%C3%A3+s%E1%BA%B5n+s%C3%A0ng%21 HTTP/1.1" 200 282
+2025-03-16 19:45:29,228 [INFO] MainThread - s1.py:873 - Đã gửi thông báo khởi động
+2025-03-16 19:45:29,229 [INFO] MainThread - s1.py:876 - Bắt đầu polling...
+2025-03-16 19:45:29,494 [DEBUG] MainThread - connectionpool.py:544 - https://api.telegram.org:443 "GET /bot7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8/getMe HTTP/1.1" 200 260
+2025-03-16 19:45:29,497 [DEBUG] PollingThread - connectionpool.py:1049 - Starting new HTTPS connection (1): api.telegram.org:443
+2025-03-16 19:45:35,337 [DEBUG] PollingThread - connectionpool.py:544 - https://api.telegram.org:443 "GET /bot7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8/getUpdates?offset=1&timeout=5 HTTP/1.1" 200 23
+2025-03-16 19:45:37,687 [DEBUG] PollingThread - connectionpool.py:544 - https://api.telegram.org:443 "GET /bot7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8/getUpdates?offset=1&timeout=5 HTTP/1.1" 200 366
+2025-03-16 19:45:37,689 [DEBUG] WorkerThread2 - connectionpool.py:1049 - Starting new HTTPS connection (1): api.binance.com:443
+2025-03-16 19:45:37,851 [DEBUG] WorkerThread2 - connectionpool.py:544 - https://api.binance.com:443 "GET /api/v3/ticker/price?symbol=BTCUSDT HTTP/1.1" 200 45
+2025-03-16 19:45:37,853 [INFO] WorkerThread2 - s1.py:498 - Đã thêm LL tại 2025-03-15 17:25:00 ($82,689.50)
+2025-03-16 19:45:37,856 [DEBUG] WorkerThread2 - connectionpool.py:1049 - Starting new HTTPS connection (1): api.binance.com:443
+2025-03-16 19:45:38,006 [DEBUG] WorkerThread2 - connectionpool.py:544 - https://api.binance.com:443 "GET /api/v3/ticker/price?symbol=BTCUSDT HTTP/1.1" 200 45
+2025-03-16 19:45:38,007 [INFO] WorkerThread2 - s1.py:498 - Đã thêm LL tại 2025-03-15 18:50:00 ($82,689.50)
+2025-03-16 19:45:38,008 [DEBUG] WorkerThread2 - connectionpool.py:1049 - Starting new HTTPS connection (1): api.telegram.org:443
+2025-03-16 19:45:39,006 [DEBUG] WorkerThread2 - connectionpool.py:544 - https://api.telegram.org:443 "POST /bot7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8/sendMessage?chat_id=7662080576&text=%C4%90%C3%A3+th%C3%AAm+2+m%E1%BB%91c+cho+BTC%3A%0A-+LL%3A+17%3A25%0A-+LL%3A+18%3A50%0A&reply_parameters=%7B%22message_id%22%3A+1156%7D HTTP/1.1" 200 642
+2025-03-16 19:45:42,971 [DEBUG] PollingThread - connectionpool.py:544 - https://api.telegram.org:443 "GET /bot7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8/getUpdates?offset=426785476&timeout=5 HTTP/1.1" 200 23
+2025-03-16 19:45:48,251 [DEBUG] PollingThread - connectionpool.py:544 - https://api.telegram.org:443 "GET /bot7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8/getUpdates?offset=426785476&timeout=5 HTTP/1.1" 200 23
+2025-03-16 19:45:53,529 [DEBUG] PollingThread - connectionpool.py:544 - https://api.telegram.org:443 "GET /bot7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8/getUpdates?offset=426785476&timeout=5 HTTP/1.1" 200 23
+2025-03-16 19:45:58,806 [DEBUG] PollingThread - connectionpool.py:544 - https://api.telegram.org:443 "GET /bot7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8/getUpdates?offset=426785476&timeout=5 HTTP/1.1" 200 23
