@@ -125,9 +125,10 @@ class S1Bot:
     def add_historical_pivot(self, pivot_type, timestamp, price=None):
         """Thêm pivot vào lịch sử, tránh trùng lặp"""
         for p in self.historical_pivots:
-            if p[0] == pivot_type and abs(p[1] - price) < 0.01 and p[2] == timestamp:
+            if p[0] == pivot_type and p[2] == timestamp:  # So sánh loại pivot & timestamp
                 self.logger.info(f"⚠ Pivot {pivot_type} tại {timestamp} (${price}) đã tồn tại, không thêm lại.")
                 return  # ❌ Không thêm trùng
+
         # ✅ Chỉ thêm pivot nếu không trùng lặp
         self.historical_pivots.append((pivot_type, price, timestamp))
         self.price_history.append(price)  # Lưu giá vào danh sách lịch sử
