@@ -91,13 +91,13 @@ class S1Bot:
         self.logger = self.setup_logger()
         self.btc_analyzer = BTCAnalyzer()
 
-         # Khởi tạo bot Telegram
+         # ✅ Khởi tạo bot Telegram với token
         self.bot = Bot(token=self.token)
-        self.updater = Updater(bot=self.bot, use_context=True)
+        self.updater = Updater(token=self.token, use_context=True)
         self.dispatcher = self.updater.dispatcher  # ✅ Tạo dispatcher
 
         # Đăng ký các lệnh của bot
-        self.register_handlers()
+        self.dispatcher.add_handler(CommandHandler("moc", self.handle_moc))
         
     def register_handlers(self):
         """Đăng ký các lệnh của bot."""
