@@ -10,6 +10,10 @@ import json
 import os
 import sys
 import traceback
+from telegram import Update
+from telegram.ext import CommandHandler
+from telegram.ext import Updater, Dispatcher
+
 
 def get_vietnam_time(utc_time):
     """Chuyển đổi thời gian từ UTC sang giờ Việt Nam"""
@@ -28,6 +32,39 @@ def get_next_5min_mark():
     else:
         next_time = now.replace(minute=next_5min, second=0, microsecond=0)
     return next_time
+    
+def handle_moc(self, update: Update, context: CallbackContext):
+    """ Xử lý lệnh /moc để lưu LH, HL, LL, HH từ người dùng """
+    args = context.args
+    if len(args) != 3:
+        update.message.reply_text("⚠ Sai cú pháp! Dùng: /moc <LH|HL|LL|HH> <HH:MM> <giá>")
+        return
+
+    pivot_type = args[0].upper()
+    time_input = args[1]
+    price_str = args[2]
+
+    if pivot_type not in ["LH", "HL", "LL", "HH"]:
+        update.message.reply_text("⚠ Loại mốc không hợp lệ! Chỉ dùng LH, HL, LL, HH.")
+        return
+
+    try:
+        timestamp = datetime.strptime(time_input, "%H:%M").replace(tzinfo=timezone.utc)
+    except ValueError:
+        update.message.reply_text("⚠ Định dạng thời gian không hợp lệ! Dùng HH:MM.")
+        return
+
+    try:
+        price = float(price_str.replace(",", "").replace("$", ""))
+    except ValueError:
+        update.message.reply_text("⚠ Giá không hợp lệ! Hãy nhập số.")
+        return
+
+    # Lưu vào pivot_history và chỉ giữ 15 điểm gần nhất
+    self.pivot_history.append((pivot_type, timestamp.strftime('%H:%M'), price))
+    self.pivot_history = self.pivot_history[-15:]
+
+    update.message.reply_text(f"✅ Đã lưu {pivot_type} tại {timestamp.strftime('%H:%M')}: ${price:.2f}")
 
 # Thiết lập logging cơ bản trước khi khởi tạo bot
 logging.basicConfig(
@@ -50,6 +87,13 @@ class S1Bot:
         self.pivot_history = []  # Lưu tối đa 15 điểm pivot gần nhất (HH, HL, LH, LL)
         self.logger = self.setup_logger()
         self.btc_analyzer = BTCAnalyzer()
+        """Khởi tạo bot Telegram"""
+        self.token = token
+        self.updater = Updater(token, use_context=True)
+        self.dispatcher: Dispatcher = self.updater.dispatcher  # ✅ Tạo dispatcher
+        self.pivot_history = []  # ✅ Lưu lịch sử pivot
+        # Thêm handler cho lệnh /moc
+        self.dispatcher.add_handler(CommandHandler("moc", handle_moc))
         
     def setup_logger(self):
         import logging
@@ -882,12 +926,20 @@ class PriceAlertBot:
 
 if __name__ == "__main__":
     try:
-        bot = PriceAlertBot()
-        bot.run()
+        token = "7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8"  # 🔹 Thay thế bằng token thực tế
+        bot = S1Bot(token)  # 🔹 Tạo instance của S1Bot
+        bot.updater.start_polling()  # 🔹 Bắt đầu bot
+        logging.info("🤖 Bot đã khởi động thành công!")
+        
+        bot.updater.idle()  # 🔹 Giữ bot chạy liên tục
+
     except KeyboardInterrupt:
-        logging.info("Dừng bot bởi người dùng")
+        logging.info("🛑 Dừng bot bởi người dùng (Ctrl + C)")
+        bot.updater.stop()  # 🔹 Dừng bot đúng cách
         sys.exit(0)
+
     except Exception as e:
-        logging.error(f"Lỗi không xác định: {str(e)}")
+        logging.error(f"❌ Lỗi không xác định: {str(e)}")
         logging.error(traceback.format_exc())
         sys.exit(1)
+
