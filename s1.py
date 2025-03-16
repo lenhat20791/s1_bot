@@ -10,9 +10,11 @@ import json
 import os
 import sys
 import traceback
-from telegram import Update
+from telegram import Update, Bot
 from telegram.ext import CommandHandler
 from telegram.ext import Application, CommandHandler, CallbackContext
+import logging
+import sys
 
 
 def get_vietnam_time(utc_time):
@@ -82,27 +84,33 @@ class BTCAnalyzer:
 class S1Bot:
     def __init__(self):
         print("Bot khởi tạo")
+        self.token = token
         self.price_history = []  # Lưu lịch sử giá
         self.time_history = []  # Lưu lịch sử thời gian
         self.pivot_history = []  # Lưu tối đa 15 điểm pivot gần nhất (HH, HL, LH, LL)
         self.logger = self.setup_logger()
         self.btc_analyzer = BTCAnalyzer()
 
-        """Khởi tạo bot Telegram với Application (v20+)"""
-        self.token = "7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8"
-        self.application = Application.builder().token(self.token).build()
+         # Khởi tạo bot Telegram
+        self.bot = Bot(token=self.token)
+        self.updater = Updater(bot=self.bot, use_context=True)
+        self.dispatcher = self.updater.dispatcher  # ✅ Tạo dispatcher
 
-        """Thêm CommandHandler cho lệnh /moc"""
-        self.application.add_handler(CommandHandler("moc", self.handle_moc))
+        # Đăng ký các lệnh của bot
+        self.register_handlers()
+        
+    def register_handlers(self):
+        """Đăng ký các lệnh của bot."""
+        self.dispatcher.add_handler(CommandHandler('moc', self.handle_moc))
         
     def setup_logger(self):
         import logging
-        logger = logging.getLogger('S1Bot')
-        handler = logging.StreamHandler()
+        logger = logging.getLogger(__name__)
+        logger.setLevel(logging.INFO)
+        handler = logging.StreamHandler(sys.stdout)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
         return logger
         
     def find_pivots(self, prices, times, lb=3, rb=3, tolerance=0.0001):
@@ -913,6 +921,11 @@ class PriceAlertBot:
             )
             monitor_thread.start()
             logging.info("Đã khởi động thread theo dõi giá")
+
+            """Khởi động bot."""
+            self.updater.start_polling()
+            self.logger.info("🤖 Bot đã khởi động thành công!")
+            self.updater.idle()
             
             # Thông báo khởi động
             self.bot.send_message(self.CHAT_ID, "Bot đã sẵn sàng!")
@@ -930,7 +943,7 @@ if __name__ == "__main__":
     try:
         token = "7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8"  # ✅ Thay thế bằng token thực tế
         bot = S1Bot(token)  # ✅ Tạo instance của S1Bot
-        bot.application.run_polling()  # ✅ Chạy bot đúng cách
+        bot.run()  # ✅ Khởi động bot
         logging.info("🤖 Bot đã khởi động thành công!")
         
     except KeyboardInterrupt:
