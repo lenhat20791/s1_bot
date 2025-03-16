@@ -88,21 +88,35 @@ class PricePatternAnalyzer:
                         is_ph = False
                         break
                 if is_ph:
-                        pivots.append(("H", prices[i], i, times[i]))
-                        vn_time = get_vietnam_time(times[i])
-                        self.logger.info(f"Found Pivot High: ${prices[i]:,.2f} at {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN")
-                        continue
+                    pivots.append(("H", prices[i], i, times[i]))
+                    vn_time = get_vietnam_time(times[i])
+                    self.logger.info(
+                        f"Found Pivot High: ${prices[i]:,.2f} at {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN"
+                    )
+                    continue
 
                 # Kiểm tra Pivot Low
                 is_pl = True
                 for j in range(i-lb, i+rb+1):
                     if j != i and prices[j] <= prices[i]:
                         is_pl = False
-                    break
+                        break
                 if is_pl:
                     pivots.append(("L", prices[i], i, times[i]))
                     vn_time = get_vietnam_time(times[i])
-                    self.logger.info(f"Found Pivot Low: ${prices[i]:,.2f} at {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN")
+                    self.logger.info(
+                        f"Found Pivot Low: ${prices[i]:,.2f} at {vn_time.strftime('%Y-%m-%d %H:%M:%S')} VN"
+                    )
+            # Thêm logging tổng hợp
+            if pivots:
+                self.logger.info(f"\nTìm thấy {len(pivots)} điểm pivot:")
+                for pivot_type, price, _, time in pivots:
+                    vn_time = get_vietnam_time(time)
+                    pivot_name = "High" if pivot_type == "H" else "Low"
+                    self.logger.info(
+                        f"- Pivot {pivot_name}: ${price:,.2f} tại {vn_time.strftime('%H:%M:%S')}"
+                    )
+
             return pivots
 
         def classify_pivots(self, pivots):
