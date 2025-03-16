@@ -44,6 +44,7 @@ class PricePatternAnalyzer:
             self.price_history = []
             self.time_history = []
             self.pivots = []
+            self.pivot_history = []  # Lưu tối đa 15 đỉnh đáy gần nhất
             self.historical_pivots = []  # Lưu các pivot points được cung cấp
             self.last_sync_time = None   # Thời điểm đồng bộ cuối cùng
             self.patterns = {
@@ -547,6 +548,16 @@ class PriceAlertBot:
                 logging.error(f"Lỗi xử lý lệnh moc: {str(e)}")
                 logging.error(traceback.format_exc())
                 self.bot.reply_to(message, f"Có lỗi xảy ra: {str(e)}")
+
+        def handle_moc(self, message):
+            """ Xử lý lệnh /moc để lưu LH, HL do người dùng nhập """
+            data = message.text.split()
+            if len(data) == 4 and data[1].lower() in ["lh", "hl", "ll", "hh"]:
+                time_input = data[2]
+                price = float(data[3])
+                self.pivot_history.append((data[1].upper(), time_input, price))
+                self.pivot_history = self.pivot_history[-15:]  # Giữ 15 giá trị gần nhất
+                self.bot.send_message(message.chat.id, f"✅ Đã lưu {data[1].upper()} tại {time_input}: ${price}")
 
         @self.bot.message_handler(commands=['reset'])
         def handle_reset(message):
