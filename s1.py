@@ -45,8 +45,9 @@ class BTCAnalyzer:
 class S1Bot:
     def __init__(self):
         print("Bot khởi tạo")
-        self.price_history = []
-        self.time_history = []
+        self.price_history = []  # Lưu lịch sử giá
+        self.time_history = []  # Lưu lịch sử thời gian
+        self.pivot_history = []  # Lưu tối đa 15 điểm pivot gần nhất (HH, HL, LH, LL)
         self.logger = self.setup_logger()
         self.btc_analyzer = BTCAnalyzer()
         
@@ -64,18 +65,32 @@ class S1Bot:
         """Tìm các điểm pivot (HH, LL, HL, LH) với timestamp"""
         pivots = []
         for i in range(lb, len(prices) - rb):
-            is_ph = all(prices[i] > prices[i - j] - tolerance and prices[i] > prices[i + j] - tolerance for j in range(1, lb + 1))
-            is_pl = all(prices[i] < prices[i - j] + tolerance and prices[i] < prices[i + j] + tolerance for j in range(1, lb + 1))
-    
+            is_ph = all(prices[i] > prices[i - j] and prices[i] > prices[i + j] for j in range(1, lb + 1))
             if is_ph:
-                pivot_type = "HH" if len(pivots) > 0 and prices[i] > max(p[1] for p in pivots if p[3] in ["High", "HH"]) else "High"
+                pivot_type = "HH" if pivots and prices[i] > max(p[1] for p in pivots if p[3] in ["High", "HH"]) else "High"
                 pivots.append((times[i], prices[i], i, pivot_type))
-            
+
+            is_pl = all(prices[i] < prices[i - j] and prices[i] < prices[i + j] for j in range(1, lb + 1))
             if is_pl:
-                pivot_type = "LL" if len(pivots) > 0 and prices[i] < min(p[1] for p in pivots if p[3] in ["Low", "LL"]) else "Low"
+                pivot_type = "LL" if pivots and prices[i] < min(p[1] for p in pivots if p[3] in ["Low", "LL"]) else "Low"
                 pivots.append((times[i], prices[i], i, pivot_type))
-    
+        
+        self.update_pivot_history(pivots)
         return pivots
+        
+    def update_pivot_history(self, new_pivots):
+        """Cập nhật danh sách pivot lịch sử, giữ tối đa 15 điểm gần nhất"""
+        self.pivot_history.extend(new_pivots)
+        self.pivot_history = self.pivot_history[-15:]  # Giữ tối đa 15 điểm
+        self.logger.info("📊 Thống kê 15 đỉnh đáy gần nhất:")
+        for idx, (t, p, _, type) in enumerate(self.pivot_history[::-1]):
+            self.logger.info(f"{idx+1}. {type}: {t} (${p})")
+    
+    def handle_moc_command(self, user_pivots):
+        """Xử lý lệnh /moc để cập nhật pivot từ TradingView"""
+        self.pivot_history = []  # Reset pivot cũ
+        self.update_pivot_history(user_pivots)  # Cập nhật pivot mới
+        self.logger.info("✅ Đã cập nhật các pivot từ TradingView.")
 
     def classify_pivots(self, pivots):
         """Phân loại các điểm pivot"""
