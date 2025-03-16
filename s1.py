@@ -39,8 +39,8 @@ logging.basicConfig(
 )
 
 class S1Bot:
-    class S1Bot:
     def __init__(self):
+        print("Bot khởi tạo")
         self.price_history = []
         self.time_history = []
         self.logger = self.setup_logger()
