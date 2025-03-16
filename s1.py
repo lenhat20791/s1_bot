@@ -38,6 +38,54 @@ logging.basicConfig(
     ]
 )
 
+class S1Bot:
+    def __init__(self):
+        """
+        Khởi tạo bot với các thuộc tính cần thiết.
+        """
+        self.last_pattern = None
+        self.btc_analyzer = BTCAnalyzer()  # Giả sử có lớp BTCAnalyzer để phân tích Bitcoin
+
+    def find_pivots(self, prices, times, tolerance=0.0001):
+        """
+        Tìm các điểm pivot trong dữ liệu giá.
+        
+        :param prices: Danh sách giá.
+        :param times: Danh sách thời gian tương ứng với giá.
+        :param tolerance: Ngưỡng để xác định pivot.
+        :return: Danh sách các điểm pivot.
+        """
+        pivots = []
+        for i in range(1, len(prices) - 1):
+            if prices[i] > prices[i - 1] and prices[i] > prices[i + 1]:
+                pivots.append(("HH", times[i], prices[i]))
+            elif prices[i] < prices[i - 1] and prices[i] < prices[i + 1]:
+                pivots.append(("LL", times[i], prices[i]))
+        return pivots
+
+    def analyze_patterns(self, price, timestamp):
+        """
+        Phân tích các mẫu hình giá.
+        
+        :param price: Giá hiện tại.
+        :param timestamp: Thời gian hiện tại.
+        :return: Danh sách các mẫu hình được phát hiện.
+        """
+        patterns = self.btc_analyzer.analyze(price, timestamp)
+        return patterns
+
+    def should_send_alert(self, new_patterns):
+        """
+        Xác định xem có nên gửi cảnh báo hay không.
+        
+        :param new_patterns: Danh sách các mẫu hình mới được phát hiện.
+        :return: True nếu nên gửi cảnh báo, ngược lại False.
+        """
+        if self.last_pattern is None or self.last_pattern not in new_patterns:
+            self.last_pattern = new_patterns[0] if new_patterns else None
+            return True
+        return False
+
 class PricePatternAnalyzer:
         def __init__(self, max_bars=200):
             self.max_bars = max_bars
