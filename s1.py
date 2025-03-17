@@ -14,6 +14,7 @@ BINANCE_API_SECRET = "rIQ2LLUtYWBcXt5FiMIHuXeeDJqeREbvw8r9NlTJ83gveSAvpSMqd1NBoQ
 CHAT_ID = 7662080576
 LOG_FILE = "bot_log.json"
 PATTERN_LOG_FILE = "pattern_log.txt"
+DEBUG_LOG_FILE = "debug_log.txt"
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO)
@@ -35,10 +36,10 @@ user_provided_pivots = []  # Stores pivots provided via /moc command
 # Initialize Binance Client
 binance_client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
 
-def save_log(data, filename):
+def save_log(log_message, filename):
     """ Save log messages to a text file """
     with open(filename, "a", encoding="utf-8") as f:
-        f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} [INFO] - {message}\n")
+        f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} [INFO] - {log_message}\n")
 
 def get_binance_price(context: CallbackContext):
     """ Fetches high and low prices for the last 5-minute candlestick """
@@ -48,11 +49,16 @@ def get_binance_price(context: CallbackContext):
         high_price = float(last_candle[2])
         low_price = float(last_candle[3])
 
+        save_log(f"Thu thập dữ liệu nến 5m: Cao nhất = {high_price}, Thấp nhất = {low_price}", DEBUG_LOG_FILE)
+
         detect_pivot(high_price, "H")
         detect_pivot(low_price, "L")
+        
+        save_log(f"Xác định pivot từ nến 5m - HH: {high_price}, LL: {low_price}", PATTERN_LOG_FILE)
+        
     except Exception as e:
         logger.error(f"Binance API Error: {e}")
-        save_log(f"Binance API Error: {e}", PATTERN_LOG_FILE)
+        save_log(f"Binance API Error: {e}", DEBUG_LOG_FILE)
 
 def detect_pivot(price, price_type):
     """ Determines pivot points using user-provided and real-time data."""
@@ -130,27 +136,50 @@ def send_alert():
     bot.send_message(chat_id=CHAT_ID, text="⚠️ Pattern Detected! Check the market.")
 
 def moc(update: Update, context: CallbackContext):
-    """ Handles the /moc command to receive pivot points."""
+    """ Handles the /moc command to receive multiple pivot points and resets logic."""
     global user_provided_pivots
     args = context.args
     
-    if len(args) < 6:
-        update.message.reply_text("Invalid format. Use: /moc btc lh 82000 14h20 hl 81000 14h30 hh 83000 14h50")
+    logger.info(f"Received /moc command with args: {args}")
+    save_log(f"Received /moc command with args: {args}", DEBUG_LOG_FILE)
+    
+    if len(args) < 4 or (len(args) - 1) % 3 != 0:
+        update.message.reply_text("⚠️ Sai định dạng! Dùng: /moc btc lh 82000 14h20 hl 81000 14h30 hh 83000 14h50")
         return
     
-    new_pivot = {
-        "type": args[1],
-        "price": float(args[2]),
-        "time": args[3]
-    }
-    user_provided_pivots.append(new_pivot)
-
+    asset = args[0].lower()
+    if asset != "btc":
+        update.message.reply_text("⚠️ Chỉ hỗ trợ BTC! Ví dụ: /moc btc lh 82000 14h20 hl 81000 14h30 hh 83000 14h50")
+        return
+        
+    # **Xóa dữ liệu cũ** trước khi cập nhật mốc mới
+    user_provided_pivots.clear()
+    detected_pivots.clear()
+    
+    # Ghi nhận các mốc mới
+    for i in range(1, len(args), 3):
+        try:
+            pivot_type = args[i]
+            price = float(args[i + 1])
+            time = args[i + 2]
+            user_provided_pivots.append({"type": pivot_type, "price": price, "time": time})
+            save_log(f"Nhận mốc {pivot_type} - Giá: {price} - Thời gian: {time}", DEBUG_LOG_FILE)
+        except ValueError:
+            update.message.reply_text(f"⚠️ Lỗi: Giá phải là số hợp lệ! ({args[i + 1]})")
+            return
+    
+    # Giới hạn 15 mốc gần nhất
     if len(user_provided_pivots) > 15:
-        user_provided_pivots.pop(0)
+        user_provided_pivots = user_provided_pivots[-15:]
+
+    # **Ghi đè dữ liệu vào pattern log**
+    with open(PATTERN_LOG_FILE, "w", encoding="utf-8") as f:
+        f.write("=== Pattern Log Reset ===\n")
 
     save_log(f"User Pivots Updated: {user_provided_pivots}", LOG_FILE)
     save_log(f"User Pivots Updated: {user_provided_pivots}", PATTERN_LOG_FILE)
 
+    # Phản hồi cho người dùng
     update.message.reply_text(f"✅ Đã nhận các mốc: {user_provided_pivots}")
     logger.info(f"User Pivots Updated: {user_provided_pivots}")
 
