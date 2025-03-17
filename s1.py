@@ -2,10 +2,13 @@ import logging
 import json
 import csv
 import os
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from telegram import Update, Bot
 from telegram.ext import Updater, CommandHandler, CallbackContext, JobQueue
 from binance.client import Client
+from openpyxl import Workbook
+from openpyxl.chart import LineChart, Reference
 
 # Configurations
 TOKEN = "7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8"
@@ -15,19 +18,18 @@ CHAT_ID = 7662080576
 LOG_FILE = "bot_log.json"
 PATTERN_LOG_FILE = "pattern_log.txt"
 DEBUG_LOG_FILE = "debug_log.txt"
+EXCEL_FILE = "pivots.xlsx"
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Ensure log files exist
-if not os.path.exists(LOG_FILE):
-    with open(LOG_FILE, "w", encoding="utf-8") as f:
-        json.dump([], f)
+for file in [LOG_FILE, PATTERN_LOG_FILE, DEBUG_LOG_FILE]:
+    if not os.path.exists(file):
+        with open(file, "w", encoding="utf-8") as f:
+            f.write("=== Log Initialized ===\n")
 
-if not os.path.exists(PATTERN_LOG_FILE):
-    with open(PATTERN_LOG_FILE, "w", encoding="utf-8") as f:
-        f.write("=== Pattern Log Initialized ===\n")
 
 # Store pivot data
 detected_pivots = []  # Stores last 15 pivots
@@ -41,21 +43,46 @@ def save_log(log_message, filename):
     with open(filename, "a", encoding="utf-8") as f:
         f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} [INFO] - {log_message}\n")
 
+def save_to_excel():
+    """ Saves pivot data to an Excel file with a chart."""
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Time", "Type", "Price"])
+    
+    for pivot in detected_pivots:
+        ws.append([pivot["time"], pivot["type"], pivot["price"]])
+    
+    chart = LineChart()
+    data = Reference(ws, min_col=3, min_row=2, max_row=len(detected_pivots) + 1)
+    categories = Reference(ws, min_col=1, min_row=2, max_row=len(detected_pivots) + 1)
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(categories)
+    chart.title = "Pivot Points"
+    chart.x_axis.title = "Time"
+    chart.y_axis.title = "Price"
+    ws.add_chart(chart, "E5")
+    
+    wb.save(EXCEL_FILE)
+    save_log("Pivot data saved to Excel", DEBUG_LOG_FILE)
+    
 def get_binance_price(context: CallbackContext):
     """ Fetches high and low prices for the last 5-minute candlestick """
     try:
+        # Chờ đến thời điểm chính xác (00, 05, 10, ..., 55)
+        now = datetime.utcnow()
+        seconds_to_wait = (5 - (now.minute % 5)) * 60 - now.second
+        time.sleep(seconds_to_wait)
+        
+        # Lấy dữ liệu nến 5m đã đóng hoàn toàn
         klines = binance_client.futures_klines(symbol="BTCUSDT", interval="5m", limit=2)
         last_candle = klines[-2]  # Ensure we get the closed candle
         high_price = float(last_candle[2])
         low_price = float(last_candle[3])
 
         save_log(f"Thu thập dữ liệu nến 5m: Cao nhất = {high_price}, Thấp nhất = {low_price}", DEBUG_LOG_FILE)
-
         detect_pivot(high_price, "H")
         detect_pivot(low_price, "L")
-        
-        save_log(f"Xác định pivot từ nến 5m - HH: {high_price}, LL: {low_price}", PATTERN_LOG_FILE)
-        
+        save_to_excel()
     except Exception as e:
         logger.error(f"Binance API Error: {e}")
         save_log(f"Binance API Error: {e}", DEBUG_LOG_FILE)
@@ -89,22 +116,7 @@ def detect_pivot(price, price_type):
     draw_pattern_chart()
     if check_pattern():
         send_alert()
-
-def draw_pattern_chart():
-    """ Generates an ASCII chart of detected pivot points """
-    lines = []
-    for p in detected_pivots[-10:]:
-        if p["type"] == "HH":
-            lines.append(f"    /{p['type']} \\")
-        elif p["type"] == "LL":
-            lines.append(f"    \\{p['type']} /")
-        elif p["type"] == "HL":
-            lines.append(f"      {p['type']}")
-        elif p["type"] == "LH":
-            lines.append(f"      {p['type']}")
-
-    save_log("\n".join(lines), PATTERN_LOG_FILE)
-    
+   
 def check_pattern():
     """ Checks if detected pivots match predefined patterns."""
     patterns = {
@@ -137,7 +149,7 @@ def send_alert():
 
 def moc(update: Update, context: CallbackContext):
     """ Handles the /moc command to receive multiple pivot points and resets logic."""
-    global user_provided_pivots
+    global user_provided_pivots, detected_pivots
     args = context.args
     
     logger.info(f"Received /moc command with args: {args}")
@@ -178,6 +190,7 @@ def moc(update: Update, context: CallbackContext):
 
     save_log(f"User Pivots Updated: {user_provided_pivots}", LOG_FILE)
     save_log(f"User Pivots Updated: {user_provided_pivots}", PATTERN_LOG_FILE)
+    save_to_excel()
 
     # Phản hồi cho người dùng
     update.message.reply_text(f"✅ Đã nhận các mốc: {user_provided_pivots}")
@@ -191,8 +204,12 @@ def main():
     
     dp.add_handler(CommandHandler("moc", moc))
     
-    # Schedule price updates every 5 minutes
-    job_queue.run_repeating(get_binance_price, interval=300, first=0)
+    # Chờ đến thời điểm gần nhất (00, 05, 10, ..., 55)
+    now = datetime.utcnow()
+    seconds_to_wait = (5 - (now.minute % 5)) * 60 - now.second
+    time.sleep(seconds_to_wait)
+    
+    job_queue.run_repeating(get_binance_price, interval=300, first=0)  # 5 phút
     
     print("Bot is running...")
     logger.info("Bot started successfully.")
