@@ -1,6 +1,5 @@
 import logging
 import json
-import csv
 import os
 import time
 from datetime import datetime, timedelta
@@ -8,7 +7,6 @@ from telegram import Update, Bot
 from telegram.ext import Updater, CommandHandler, CallbackContext, JobQueue
 from binance.client import Client
 from openpyxl import Workbook
-from openpyxl.chart import LineChart, Reference
 
 # Configurations
 TOKEN = "7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8"
@@ -45,8 +43,13 @@ def save_log(log_message, filename):
 
 def save_to_excel():
     """ Saves pivot data to an Excel file with a chart."""
+    if not detected_pivots:
+        save_log("No pivot data to save", DEBUG_LOG_FILE)
+        return
+    
     wb = Workbook()
     ws = wb.active
+    ws.title = "Pivot Points"
     ws.append(["Time", "Type", "Price"])
     
     for pivot in detected_pivots:
@@ -55,37 +58,45 @@ def save_to_excel():
     chart = LineChart()
     data = Reference(ws, min_col=3, min_row=2, max_row=len(detected_pivots) + 1)
     categories = Reference(ws, min_col=1, min_row=2, max_row=len(detected_pivots) + 1)
-    chart.add_data(data, titles_from_data=True)
+    chart.add_data(data, titles_from_data=False)
     chart.set_categories(categories)
     chart.title = "Pivot Points"
     chart.x_axis.title = "Time"
     chart.y_axis.title = "Price"
     ws.add_chart(chart, "E5")
     
-    wb.save(EXCEL_FILE)
-    save_log("Pivot data saved to Excel", DEBUG_LOG_FILE)
+    try:
+        wb.save(EXCEL_FILE)
+        save_log("Pivot data saved to Excel", DEBUG_LOG_FILE)
+    except Exception as e:
+        save_log(f"Error saving Excel file: {e}", DEBUG_LOG_FILE)
     
 def get_binance_price(context: CallbackContext):
     """ Fetches high and low prices for the last 5-minute candlestick """
     try:
-        # Chờ đến thời điểm chính xác (00, 05, 10, ..., 55)
-        now = datetime.utcnow()
-        seconds_to_wait = (5 - (now.minute % 5)) * 60 - now.second
-        time.sleep(seconds_to_wait)
-        
-        # Lấy dữ liệu nến 5m đã đóng hoàn toàn
         klines = binance_client.futures_klines(symbol="BTCUSDT", interval="5m", limit=2)
         last_candle = klines[-2]  # Ensure we get the closed candle
         high_price = float(last_candle[2])
         low_price = float(last_candle[3])
-
+        
         save_log(f"Thu thập dữ liệu nến 5m: Cao nhất = {high_price}, Thấp nhất = {low_price}", DEBUG_LOG_FILE)
+        
         detect_pivot(high_price, "H")
         detect_pivot(low_price, "L")
         save_to_excel()
     except Exception as e:
         logger.error(f"Binance API Error: {e}")
         save_log(f"Binance API Error: {e}", DEBUG_LOG_FILE)
+        
+def schedule_next_run(job_queue):
+    """ Schedule the next run of get_binance_price exactly at the next 5-minute mark """
+    now = datetime.now()
+    next_run = now.replace(second=0, microsecond=0) + timedelta(minutes=(5 - now.minute % 5))
+    delay = (next_run - now).total_seconds()
+    
+    save_log(f"Lên lịch chạy vào {next_run.strftime('%Y-%m-%d %H:%M:%S')}", DEBUG_LOG_FILE)
+    job_queue.run_once(get_binance_price, delay)
+    job_queue.run_repeating(get_binance_price, interval=300, first=delay)
 
 def detect_pivot(price, price_type):
     """ Determines pivot points using user-provided and real-time data."""
@@ -204,12 +215,7 @@ def main():
     
     dp.add_handler(CommandHandler("moc", moc))
     
-    # Chờ đến thời điểm gần nhất (00, 05, 10, ..., 55)
-    now = datetime.utcnow()
-    seconds_to_wait = (5 - (now.minute % 5)) * 60 - now.second
-    time.sleep(seconds_to_wait)
-    
-    job_queue.run_repeating(get_binance_price, interval=300, first=0)  # 5 phút
+    schedule_next_run(job_queue)  # Schedule the first execution at the next 5-minute mark
     
     print("Bot is running...")
     logger.info("Bot started successfully.")
