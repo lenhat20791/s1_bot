@@ -93,21 +93,18 @@ def save_to_excel():
         categories = Reference(ws, min_col=1, min_row=2, max_row=len(detected_pivots) + 1)
         
         # Thêm series và đặt màu
-        series = chart.series[0] if chart.series else chart.add_series()
-        series.marker.symbol = "circle"  # Thêm điểm đánh dấu
-        series.marker.size = 8
         chart.add_data(data, titles_from_data=True)
         chart.set_categories(categories)
         
         # Định dạng trục
         chart.x_axis.title = "Time"
         chart.y_axis.title = "Price (USD)"
-        chart.x_axis.tickLblSkip = 2  # Bỏ bớt nhãn trục x để tránh đông đúc
+        chart.x_axis.tickLblSkip = 2
         
         # Thêm biểu đồ vào worksheet
         ws.add_chart(chart, "F2")
         
-        # Lưu file
+        # Lưu file - sử dụng biến toàn cục EXCEL_FILE
         wb.save(EXCEL_FILE)
         save_log(f"Pivot data saved to Excel with {len(detected_pivots)} points", DEBUG_LOG_FILE)
         
