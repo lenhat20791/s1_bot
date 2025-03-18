@@ -1,5 +1,6 @@
 import logging
 import json
+import pandas as pd
 import os
 import time
 from datetime import datetime
@@ -637,126 +638,117 @@ class PivotData:
                 save_log("No pivot data to save", DEBUG_LOG_FILE)
                 return
             
-            wb = Workbook()
-            # Đổi tên sheet không có space
-            ws_pivot = wb.active
-            ws_pivot.title = "TestData"  # Thay vì "Test Data"
+            # Tạo DataFrame chính
+            main_data = []
+            for pivot in all_pivots:
+                main_data.append({
+                    'Time': pivot['time'],
+                    'Type': pivot['type'],
+                    'Price': pivot['price'],
+                    'Source': pivot.get('source', 'system')
+                })
+            df_main = pd.DataFrame(main_data)
             
-            # Thêm dòng thống kê confirmed pivots ở đầu
-            confirmed_text = " / ".join([
-                f"{p['type']} {p['time']}" 
-                for p in self.confirmed_pivots
-            ])
-            ws_pivot.cell(row=1, column=1, value="Confirmed Pivots:")
-            ws_pivot.cell(row=1, column=2, value=confirmed_text)
-            
-            # Định dạng tiêu đề (bắt đầu từ row 3)
-            headers = ["Time", "Type", "Price", "Source", "Change %", "Trend"]
-            for col, header in enumerate(headers, 1):
-                cell = ws_pivot.cell(row=3, column=col)
-                cell.value = header
-                cell.font = Font(bold=True)
-                cell.fill = PatternFill(start_color="CCCCCC", end_color="CCCCCC", fill_type="solid")
-                cell.alignment = Alignment(horizontal="center")
-                ws_pivot.column_dimensions[get_column_letter(col)].width = 15
+            # Tạo DataFrame cho confirmed pivots
+            confirmed_data = [{
+                'Time': p['time'],
+                'Type': p['type'],
+                'Price': p['price']
+            } for p in self.confirmed_pivots]
+            df_confirmed = pd.DataFrame(confirmed_data)
 
-            # Thêm dữ liệu với định dạng màu và tính toán bổ sung
-            prev_price = None
-            trend = "N/A"
-            
-            for idx, pivot in enumerate(all_pivots, 4):  # Bắt đầu từ row 4 do có thêm dòng confirmed
-                # Thêm thông tin cơ bản
-                ws_pivot.cell(row=idx, column=1, value=pivot["time"])
-                ws_pivot.cell(row=idx, column=2, value=pivot["type"])
-                ws_pivot.cell(row=idx, column=3, value=pivot["price"])
-                ws_pivot.cell(row=idx, column=4, value=pivot["source"])
+            # Sử dụng ExcelWriter với xlsxwriter
+            with pd.ExcelWriter('pivots.xlsx', engine='xlsxwriter') as writer:
+                # Sheet chính
+                df_main.to_excel(writer, sheet_name='TestData', index=False, startrow=2)  # Để lại 2 dòng cho confirmed text
+                workbook = writer.book
+                worksheet = writer.sheets['TestData']
                 
-                # Tính % thay đổi và xu hướng
-                if prev_price:
-                    change = ((pivot["price"] - prev_price) / prev_price) * 100
-                    ws_pivot.cell(row=idx, column=5, value=f"{change:+.2f}%")
-                    
-                    # Xác định xu hướng
-                    if change > 0:
-                        trend = "↗ Tăng"
-                        cell_color = "00FF00"  # Màu xanh lá
-                    elif change < 0:
-                        trend = "↘ Giảm"
-                        cell_color = "FF0000"  # Màu đỏ
-                    else:
-                        trend = "→ Đi ngang"
-                        cell_color = "FFFF00"  # Màu vàng
-                    
-                    # Thêm xu hướng và định dạng màu
-                    trend_cell = ws_pivot.cell(row=idx, column=6, value=trend)
-                    trend_cell.fill = PatternFill(start_color=cell_color, end_color=cell_color, fill_type="solid")
-                    
-                prev_price = pivot["price"]
+                # Thêm confirmed text ở đầu
+                confirmed_text = " / ".join([
+                    f"{p['type']} {p['time']}" 
+                    for p in self.confirmed_pivots
+                ])
+                worksheet.write(0, 0, "Confirmed Pivots:")
+                worksheet.write(0, 1, confirmed_text)
                 
-                # Định dạng các ô
-                for col in range(1, 7):
-                    cell = ws_pivot.cell(row=idx, column=col)
-                    cell.alignment = Alignment(horizontal="center")
+                # Định dạng các cột
+                price_format = workbook.add_format({'num_format': '$#,##0.00'})
+                pivot_format = workbook.add_format({
+                    'bold': True,
+                    'font_color': 'red'
+                })
+                user_format = workbook.add_format({
+                    'bg_color': 'E6E6FA'
+                })
+                
+                # Áp dụng định dạng
+                worksheet.set_column('C:C', 15, price_format)  # Price column
+                
+                # Thêm % thay đổi và xu hướng
+                row = 3  # Bắt đầu từ row 3 do có header và confirmed text
+                prev_price = None
+                for pivot in all_pivots:
+                    if prev_price:
+                        change = ((pivot['price'] - prev_price) / prev_price) * 100
+                        worksheet.write(row, 4, f"{change:+.2f}%")
+                        
+                        # Xác định xu hướng và màu
+                        if change > 0:
+                            trend = "↗ Tăng"
+                            trend_format = workbook.add_format({'bg_color': '00FF00'})
+                        elif change < 0:
+                            trend = "↘ Giảm"
+                            trend_format = workbook.add_format({'bg_color': 'FF0000'})
+                        else:
+                            trend = "→ Đi ngang"
+                            trend_format = workbook.add_format({'bg_color': 'FFFF00'})
+                        
+                        worksheet.write(row, 5, trend, trend_format)
                     
-                    # Thêm màu nền cho các pivot từ user
-                    if pivot["source"] == "user":
-                        cell.fill = PatternFill(start_color="E6E6FA", end_color="E6E6FA", fill_type="solid")
+                    # Đánh dấu user pivot
+                    if pivot.get('source') == 'user':
+                        for col in range(6):
+                            worksheet.write(row, col, df_main.iloc[row-3, col], user_format)
+                    
+                    prev_price = pivot['price']
+                    row += 1
+                
+                # Sheet Confirmed Pivots
+                df_confirmed.to_excel(writer, sheet_name='ConfirmedPivots', index=False)
+                
+                # Tạo biểu đồ
+                chart = workbook.add_chart({'type': 'line'})
+                chart.add_series({
+                    'name': 'Price',
+                    'categories': f"='TestData'!$A$4:$A${len(df_main) + 3}",  # Quote sheet name
+                    'values': f"='TestData'!$C$4:$C${len(df_main) + 3}"      # Quote sheet name
+                })
+                
+                # Định dạng biểu đồ
+                chart.set_title({'name': 'Pivot Points Analysis'})
+                chart.set_x_axis({
+                    'name': 'Time',
+                    'num_format': 'hh:mm'
+                })
+                chart.set_y_axis({'name': 'Price (USD)'})
+                chart.set_size({'width': 720, 'height': 400})
+                
+                # Thêm biểu đồ vào sheet
+                worksheet.insert_chart('H2', chart)
+                
+                # Thêm thống kê
+                stats_row = len(df_main) + 5
+                worksheet.write(stats_row, 0, "Thống kê:")
+                worksheet.write(stats_row + 1, 0, "Tổng số pivot:")
+                worksheet.write(stats_row + 1, 1, len(all_pivots))
+                worksheet.write(stats_row + 2, 0, "Pivot từ user:")
+                worksheet.write(stats_row + 2, 1, len([p for p in all_pivots if p.get('source') == 'user']))
+                worksheet.write(stats_row + 3, 0, "Pivot từ hệ thống:")
+                worksheet.write(stats_row + 3, 1, len([p for p in all_pivots if p.get('source') == 'system']))
+                worksheet.write(stats_row + 4, 0, "Pivot đã xác nhận:")
+                worksheet.write(stats_row + 4, 1, len(self.confirmed_pivots))
 
-            # Tạo sheet Confirmed Pivots
-            ws_confirmed = wb.create_sheet("ConfirmedPivots")
-            # Headers cho confirmed pivots
-            for col, header in enumerate(["Time", "Type", "Price"], 1):
-                ws_confirmed.cell(row=1, column=col, value=header)
-                
-            # Dữ liệu confirmed pivots
-            for idx, pivot in enumerate(self.confirmed_pivots, 2):
-                ws_confirmed.cell(row=idx, column=1, value=pivot["time"])
-                ws_confirmed.cell(row=idx, column=2, value=pivot["type"])
-                ws_confirmed.cell(row=idx, column=3, value=pivot["price"])
-
-            # Tạo biểu đồ
-            chart = LineChart()
-            chart.title = "Pivot Points Analysis"
-            chart.style = 13
-            chart.height = 15
-            chart.width = 30
-            
-            # Dữ liệu cho biểu đồ
-            data = Reference(ws_pivot, min_col=3, min_row=3, max_row=len(all_pivots) + 3)
-            categories = Reference(ws_pivot, min_col=1, min_row=4, max_row=len(all_pivots) + 3)
-            
-            # Thêm series và định dạng
-            chart.add_data(data, titles_from_data=True)
-            chart.set_categories(categories)
-            
-            # Định dạng trục
-            chart.x_axis.title = "Time"
-            chart.x_axis.number_format = "hh:mm"  # Format thời gian
-            chart.y_axis.title = "Price (USD)"
-            chart.x_axis.tickLblSkip = 2
-            
-            # Thêm các điểm đánh dấu
-            s = chart.series[0]
-            s.marker = Marker('circle')
-            s.marker.size = 8
-            
-            # Thêm biểu đồ vào worksheet
-            ws_pivot.add_chart(chart, "H2")
-            
-            # Thêm thông tin tổng hợp
-            summary_row = len(all_pivots) + 6  # +6 do có thêm dòng confirmed ở đầu
-            ws_pivot.cell(row=summary_row, column=1, value="Thống kê:")
-            ws_pivot.cell(row=summary_row + 1, column=1, value="Tổng số pivot:")
-            ws_pivot.cell(row=summary_row + 1, column=2, value=len(all_pivots))
-            ws_pivot.cell(row=summary_row + 2, column=1, value="Pivot từ user:")
-            ws_pivot.cell(row=summary_row + 2, column=2, value=len([p for p in all_pivots if p["source"] == "user"]))
-            ws_pivot.cell(row=summary_row + 3, column=1, value="Pivot từ hệ thống:")
-            ws_pivot.cell(row=summary_row + 3, column=2, value=len([p for p in all_pivots if p["source"] == "system"]))
-            ws_pivot.cell(row=summary_row + 4, column=1, value="Pivot đã xác nhận:")
-            ws_pivot.cell(row=summary_row + 4, column=2, value=len(self.confirmed_pivots))
-            
-            # Lưu file
-            wb.save(EXCEL_FILE)
             save_log(f"Pivot data saved to Excel with {len(all_pivots)} points ({len(self.confirmed_pivots)} confirmed)", DEBUG_LOG_FILE)
             
         except Exception as e:
@@ -796,7 +788,7 @@ def get_binance_price(context: CallbackContext):
         
         detect_pivot(high_price, "H")
         detect_pivot(low_price, "L")
-        save_to_excel()
+        pivot_data.save_to_excel()
     except Exception as e:
         logger.error(f"Binance API Error: {e}")
         save_log(f"Binance API Error: {e}", DEBUG_LOG_FILE)
