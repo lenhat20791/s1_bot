@@ -4,7 +4,7 @@ import pandas as pd
 import os
 import time
 import pytz
-from datetime import datetime
+from datetime import datetime, timedelta
 from telegram import Update, Bot
 from telegram.ext import Updater, CommandHandler, CallbackContext, JobQueue
 from binance.client import Client
@@ -150,57 +150,6 @@ class PivotData:
             save_log(f"❌ Lỗi khi thêm price data: {str(e)}", DEBUG_LOG_FILE)
             return False
     
-    def get_pivot_support_resistance(self, lookback: int = 20) -> dict:
-        """
-        Tính toán các mức hỗ trợ và kháng cự dựa trên pivot points
-        Returns:
-            Dict chứa các mức S/R và độ mạnh của chúng
-        """
-        try:
-            if not hasattr(self, 'price_history') or len(self.price_history) < lookback:
-                save_log(f"Không đủ dữ liệu để tính S/R (cần {lookback})", DEBUG_LOG_FILE)
-                return {}
-
-            # Lấy dữ liệu trong khoảng lookback
-            recent_data = self.price_history[-lookback:]
-            
-            # Tính PP (Pivot Point)
-            highs = [x['high'] for x in recent_data]
-            lows = [x['low'] for x in recent_data]
-            closes = [x['price'] for x in recent_data]
-            
-            pp = (max(highs) + min(lows) + closes[-1]) / 3
-            
-            # Tính các mức S/R
-            r3 = pp + (max(highs) - min(lows))
-            r2 = pp + (max(highs) - min(lows)) * 0.618  # Fibonacci ratio
-            r1 = 2 * pp - min(lows)
-            
-            s1 = 2 * pp - max(highs)
-            s2 = pp - (max(highs) - min(lows)) * 0.618
-            s3 = pp - (max(highs) - min(lows))
-            
-            # Tính độ mạnh của mỗi mức
-            def calculate_strength(level):
-                touches = sum(1 for price in closes if abs(price - level) / level < 0.001)
-                return min(touches / lookback * 100, 100)  # Độ mạnh tối đa 100%
-            
-            levels = {
-                "R3": {"price": r3, "strength": calculate_strength(r3)},
-                "R2": {"price": r2, "strength": calculate_strength(r2)},
-                "R1": {"price": r1, "strength": calculate_strength(r1)},
-                "PP": {"price": pp, "strength": calculate_strength(pp)},
-                "S1": {"price": s1, "strength": calculate_strength(s1)},
-                "S2": {"price": s2, "strength": calculate_strength(s2)},
-                "S3": {"price": s3, "strength": calculate_strength(s3)}
-            }
-            
-            save_log(f"Đã tính toán mức S/R: {levels}", DEBUG_LOG_FILE)
-            return levels
-
-        except Exception as e:
-            save_log(f"Lỗi tính S/R: {str(e)}", DEBUG_LOG_FILE)
-            return {}
                
     def detect_pivot(self, price, direction):
         """Phát hiện pivot với logic TradingView đơn giản hóa"""
@@ -250,24 +199,6 @@ class PivotData:
             save_log(f"❌ Lỗi khi phát hiện pivot: {str(e)}", DEBUG_LOG_FILE)
             return None       
     
-    def _can_add_pivot(self, price):
-        """Kiểm tra có thể thêm pivot không"""
-        try:
-            all_pivots = self.get_all_pivots()
-            if not all_pivots:
-                return True
-                
-            last_pivot = all_pivots[-1]
-            time_diff = self._calculate_time_diff(last_pivot["time"])
-            
-            if time_diff < self.MIN_PIVOT_DISTANCE:
-                return False
-                
-            return True
-            
-        except Exception as e:
-            save_log(f"Lỗi khi kiểm tra can_add_pivot: {str(e)}", DEBUG_LOG_FILE)
-            return False       
  
     def _add_confirmed_pivot(self, pivot_type, price, current_time=None):
         """Thêm pivot đã được xác nhận với logging chi tiết"""
@@ -332,11 +263,11 @@ class PivotData:
     def classify_pivot(self, new_pivot):
         """Phân loại pivot theo logic TradingView"""
         try:
-            if len(self.pivot_points) < 5:
+            if len(self.confirmed_pivots) < 5:
                 return None  # Cần ít nhất 5 pivot để phân loại
 
             # Lấy 5 pivot gần nhất (bao gồm pivot mới)
-            recent_points = self.pivot_points[-5:]
+            recent_points = self.confirmed_pivots[-5:]
             if len(recent_points) < 5:
                 return None
 
@@ -347,7 +278,7 @@ class PivotData:
             d = recent_points[-4]['price']  # Pivot trước c
             e = recent_points[-5]['price']  # Pivot trước d
 
-            # Phân loại pivot theo logic TradingView
+            # Logic phân loại chính xác theo TradingView
             pivot_type = None
             if new_pivot['direction'] == 'high':
                 # Kiểm tra Higher High
@@ -486,77 +417,6 @@ class PivotData:
             save_log(f"❌ Lỗi khi lấy all pivots: {str(e)}", DEBUG_LOG_FILE)
             return []    
                 
-    def add_user_pivot(self, pivot_type, price, time):
-        """Thêm pivot từ user với logic mới"""
-        try:
-            # Kiểm tra loại pivot hợp lệ
-            if pivot_type not in ["HH", "HL", "LH", "LL"]:
-                save_log(f"❌ Loại pivot không hợp lệ: {pivot_type}", DEBUG_LOG_FILE)
-                return False
-
-            # Tạo pivot mới
-            new_pivot = {
-                "type": pivot_type,
-                "price": float(price),
-                "time": time
-            }
-
-            # Kiểm tra logic với pivot đã có
-            recent_pivots = self.get_recent_pivots(4)
-            if recent_pivots:
-                last_pivot = recent_pivots[0]
-                
-                # Log thông tin so sánh
-                save_log("\n=== Kiểm tra Logic User Pivot ===", DEBUG_LOG_FILE)
-                save_log(f"Pivot mới: {pivot_type} tại ${price:,.2f} ({time})", DEBUG_LOG_FILE)
-                save_log(f"Pivot trước: {last_pivot['type']} tại ${last_pivot['price']:,.2f} ({last_pivot['time']})", DEBUG_LOG_FILE)
-
-                # Kiểm tra logic
-                if not self._validate_pivot_sequence(last_pivot, new_pivot):
-                    return False
-
-            # Thêm pivot mới vào confirmed_pivots
-            if new_pivot not in self.confirmed_pivots:
-                self.confirmed_pivots.append(new_pivot)
-                save_log(f"✅ Đã thêm pivot: {pivot_type} tại ${price:,.2f} ({time})", DEBUG_LOG_FILE)
-                return True
-
-            return False
-
-        except Exception as e:
-            save_log(f"❌ Lỗi khi thêm user pivot: {str(e)}", DEBUG_LOG_FILE)
-            return False
-
-    def _validate_pivot_sequence(self, prev_pivot, new_pivot):
-        """Kiểm tra tính hợp lệ của chuỗi pivot"""
-        try:
-            # HH phải cao hơn pivot trước
-            if new_pivot['type'] == 'HH' and new_pivot['price'] <= prev_pivot['price']:
-                save_log("❌ HH phải có giá cao hơn pivot trước", DEBUG_LOG_FILE)
-                return False
-                
-            # LL phải thấp hơn pivot trước
-            if new_pivot['type'] == 'LL' and new_pivot['price'] >= prev_pivot['price']:
-                save_log("❌ LL phải có giá thấp hơn pivot trước", DEBUG_LOG_FILE)
-                return False
-                
-            # LH phải thấp hơn HH trước
-            if new_pivot['type'] == 'LH' and prev_pivot['type'] == 'HH' and new_pivot['price'] >= prev_pivot['price']:
-                save_log("❌ LH phải có giá thấp hơn HH trước", DEBUG_LOG_FILE)
-                return False
-                
-            # HL phải cao hơn LL trước
-            if new_pivot['type'] == 'HL' and prev_pivot['type'] == 'LL' and new_pivot['price'] <= prev_pivot['price']:
-                save_log("❌ HL phải có giá cao hơn LL trước", DEBUG_LOG_FILE)
-                return False
-                
-            save_log("✅ Pivot sequence hợp lệ", DEBUG_LOG_FILE)
-            return True
-                
-        except Exception as e:
-            save_log(f"❌ Lỗi khi validate pivot sequence: {str(e)}", DEBUG_LOG_FILE)
-            return False
-    
     def _determine_pivot_type(self, current_price, direction):
         """Xác định loại pivot dựa trên logic TV"""
         try:
@@ -637,45 +497,6 @@ def schedule_next_run(job_queue):
         logger.error(f"Error scheduling next run: {e}")
         save_log(f"Error scheduling next run: {e}", DEBUG_LOG_FILE)
      
-def _create_alert_message(pattern_name, current_price, recent_pivots):
-    """Tạo thông báo chi tiết khi phát hiện mẫu hình"""
-    vietnam_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Xác định loại mẫu hình và biểu tượng
-    if "bullish" in pattern_name.lower():
-        pattern_symbol = "🟢"
-        direction = "tăng"
-    else:
-        pattern_symbol = "🔴"
-        direction = "giảm"
-        
-    message = (
-        f"{pattern_symbol} CẢNH BÁO MẪU HÌNH {direction.upper()} - {vietnam_time}\n\n"
-        f"Giá hiện tại: ${current_price:,.2f}\n"
-        f"Mẫu hình: {pattern_name}\n\n"
-        f"5 pivot gần nhất:\n"
-    )
-    
-    # Thêm thông tin về 5 pivot gần nhất
-    for i, pivot in enumerate(recent_pivots[::-1], 1):
-        message += f"{i}. {pivot['type']}: ${pivot['price']:,.2f} ({pivot['time']})\n"
-        
-    return message
-
-def send_alert(message):
-    """Gửi cảnh báo qua Telegram với thông tin chi tiết"""
-    try:
-        bot = Bot(token=TOKEN)
-        bot.send_message(
-            chat_id=CHAT_ID,
-            text=message,
-            parse_mode='HTML'
-        )
-        save_log("Đã gửi cảnh báo mẫu hình", DEBUG_LOG_FILE)
-    except Exception as e:
-        save_log(f"Lỗi gửi cảnh báo: {str(e)}", DEBUG_LOG_FILE)
-
-
 def main():
     """Main entry point to start the bot."""
     try:
