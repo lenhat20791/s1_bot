@@ -97,14 +97,12 @@ class PivotData:
         
         # Lưu trữ dữ liệu
         self.price_history = []   # Lịch sử giá
-        self.pivot_points = []    # Lưu trữ các pivot point (high/low)
-        self.confirmed_pivots = [] # Lưu trữ các pivot đã xác nhận (HH,LL,HL,LH)
+        self.confirmed_pivots = [] # Các pivot đã xác nhận
         
-        # Thời gian và user hiện tại
+        # Thời gian hiện tại
         self.current_time = None
-        self.current_user = None
         
-        save_log("🔄 Đã khởi tạo PivotData object với logic TradingView", DEBUG_LOG_FILE)
+        save_log("🔄 Khởi tạo PivotData với logic TradingView", DEBUG_LOG_FILE)
             
     def set_current_time(self, time):
         """Cập nhật current_time"""
@@ -203,173 +201,7 @@ class PivotData:
         except Exception as e:
             save_log(f"Lỗi tính S/R: {str(e)}", DEBUG_LOG_FILE)
             return {}
-    
-    def improve_pivot_detection(self, price: float, time: str) -> tuple[bool, str]:
-        """Cải thiện logic xác định pivot """
-        try:
-            # Lấy mức S/R
-            support_resistance = self.get_pivot_support_resistance()
-            if not support_resistance:
-                return False, ""
-
-            # Kiểm tra xem giá có gần mức S/R nào không
-            MIN_DISTANCE = 0.001  # 0.1% cho phép dao động
-            
-            for level_name, level_data in support_resistance.items():
-                level_price = level_data["price"]
-                level_strength = level_data["strength"]
-                
-                price_diff = abs(price - level_price) / level_price
-                
-                if price_diff <= MIN_DISTANCE:
-                    # Giá chạm mức S/R
-                    if level_strength >= 70:  # Mức S/R mạnh
-                        if "R" in level_name:  # Mức kháng cự
-                            save_log(f"Phát hiện pivot tại mức kháng cự {level_name}: ${price:,.2f}", DEBUG_LOG_FILE)
-                            return True, "High"
-                        elif "S" in level_name:  # Mức hỗ trợ
-                            save_log(f"Phát hiện pivot tại mức hỗ trợ {level_name}: ${price:,.2f}", DEBUG_LOG_FILE)
-                            return True, "Low"
-            
-            return False, ""
-
-        except Exception as e:
-            save_log(f"Lỗi cải thiện pivot: {str(e)}", DEBUG_LOG_FILE)
-            return False, ""
-    
-    def analyze_market_trend(self, short_period: int = 10, medium_period: int = 20, long_period: int = 50) -> dict:
-        """
-        Phân tích xu hướng thị trường sử dụng nhiều chỉ báo
-        Returns:
-            Dict chứa kết quả phân tích
-        """
-        try:
-            if not hasattr(self, 'price_history') or len(self.price_history) < long_period:
-                save_log(f"Không đủ dữ liệu để phân tích (cần {long_period})", DEBUG_LOG_FILE)
-                return {}
-
-            prices = [x['price'] for x in self.price_history]
-            
-            # Tính MA các chu kỳ
-            def calculate_ma(period):
-                if len(prices) < period:
-                    return None
-                return sum(prices[-period:]) / period
-            
-            short_ma = calculate_ma(short_period)
-            medium_ma = calculate_ma(medium_period)
-            long_ma = calculate_ma(long_period)
-            
-            # Tính RSI
-            def calculate_rsi(period=14):
-                if len(prices) < period + 1:
-                    return None
-                    
-                deltas = [prices[i+1] - prices[i] for i in range(len(prices)-1)]
-                gains = [d if d > 0 else 0 for d in deltas]
-                losses = [-d if d < 0 else 0 for d in deltas]
-                
-                avg_gain = sum(gains[-period:]) / period
-                avg_loss = sum(losses[-period:]) / period
-                
-                if avg_loss == 0:
-                    return 100
-                
-                rs = avg_gain / avg_loss
-                rsi = 100 - (100 / (1 + rs))
-                return rsi
-                
-            rsi = calculate_rsi()
-            
-            # Xác định xu hướng
-            trend = "Unknown"
-            strength = 0
-            
-            if short_ma and medium_ma and long_ma:
-                if short_ma > medium_ma > long_ma:
-                    trend = "Uptrend"
-                    strength = min(((short_ma/long_ma - 1) * 100), 100)
-                elif short_ma < medium_ma < long_ma:
-                    trend = "Downtrend"
-                    strength = min(((1 - short_ma/long_ma) * 100), 100)
-                else:
-                    trend = "Sideways"
-                    strength = 0
-                    
-            # Tính volatility
-            if len(prices) >= 20:
-                recent_prices = prices[-20:]
-                avg_price = sum(recent_prices) / len(recent_prices)
-                volatility = sum([abs(p - avg_price) / avg_price for p in recent_prices]) / len(recent_prices) * 100
-            else:
-                volatility = None
-
-            result = {
-                "trend": trend,
-                "strength": strength,
-                "short_ma": short_ma,
-                "medium_ma": medium_ma,
-                "long_ma": long_ma,
-                "rsi": rsi,
-                "volatility": volatility
-            }
-            
-            save_log(f"Kết quả phân tích xu hướng: {result}", DEBUG_LOG_FILE)
-            return result
-
-        except Exception as e:
-            save_log(f"Lỗi phân tích xu hướng: {str(e)}", DEBUG_LOG_FILE)
-            return {}
-   
-    def add_user_pivot(self, pivot_type, price, time):
-        """Thêm pivot từ user với kiểm tra logic chặt chẽ hơn"""
-        try:
-            # Kiểm tra loại pivot hợp lệ
-            if pivot_type not in ["HH", "HL", "LH", "LL"]:
-                save_log(f"❌ Loại pivot không hợp lệ: {pivot_type}", DEBUG_LOG_FILE)
-                return False
-
-            # Tạo pivot mới
-            new_pivot = {
-                "type": pivot_type,
-                "price": float(price),
-                "time": time,
-                "source": "user"
-            }
-
-            # Kiểm tra logic với các pivot hiện có
-            recent_pivots = self.get_recent_pivots(4)
-            if recent_pivots:
-                last_pivot = recent_pivots[0]
-                
-                # Log thông tin so sánh
-                save_log("\n=== Kiểm Tra Logic User Pivot ===", DEBUG_LOG_FILE)
-                save_log(f"Pivot mới: {pivot_type} tại ${price:,.2f} ({time})", DEBUG_LOG_FILE)
-                save_log(f"Pivot trước: {last_pivot['type']} tại ${last_pivot['price']:,.2f} ({last_pivot['time']})", DEBUG_LOG_FILE)
-
-                # Kiểm tra logic theo loại pivot
-                if pivot_type == "HH" and price <= last_pivot['price']:
-                    save_log("❌ HH phải có giá cao hơn pivot trước", DEBUG_LOG_FILE)
-                    return False
-                elif pivot_type == "LL" and price >= last_pivot['price']:
-                    save_log("❌ LL phải có giá thấp hơn pivot trước", DEBUG_LOG_FILE)
-                    return False
-                elif pivot_type == "LH" and last_pivot['type'] == "HH" and price >= last_pivot['price']:
-                    save_log("❌ LH phải có giá thấp hơn HH trước", DEBUG_LOG_FILE)
-                    return False
-                elif pivot_type == "HL" and last_pivot['type'] == "LL" and price <= last_pivot['price']:
-                    save_log("❌ HL phải có giá cao hơn LL trước", DEBUG_LOG_FILE)
-                    return False
-
-            # Thêm pivot mới
-            self.user_pivots.append(new_pivot)
-            save_log(f"✅ Đã thêm user pivot: {pivot_type} tại ${price:,.2f} ({time})", DEBUG_LOG_FILE)
-            return True
-
-        except Exception as e:
-            save_log(f"❌ Lỗi khi thêm user pivot: {str(e)}", DEBUG_LOG_FILE)
-            return False
-           
+               
     def detect_pivot(self, price, direction):
         """Phát hiện pivot với logic TradingView đơn giản hóa"""
         try:
@@ -477,11 +309,12 @@ class PivotData:
     def get_recent_pivots(self, count=4):
         """Lấy các pivot gần nhất"""
         try:
-            # Chỉ lấy từ confirmed_pivots vì không còn user_pivots
-            save_log("\n=== Lấy 4 pivot gần nhất ===", DEBUG_LOG_FILE)
-            save_log(f"Tổng số pivot: {len(self.confirmed_pivots)}", DEBUG_LOG_FILE)
+            save_log("\n=== Lấy pivot gần nhất ===", DEBUG_LOG_FILE)
+            save_log(f"Yêu cầu: {count} pivot", DEBUG_LOG_FILE)
+            save_log(f"Tổng số pivot hiện có: {len(self.confirmed_pivots)}", DEBUG_LOG_FILE)
             
             recent = self.confirmed_pivots[-count:] if self.confirmed_pivots else []
+            
             if recent:
                 save_log("Các pivot được chọn:", DEBUG_LOG_FILE)
                 for i, p in enumerate(recent, 1):
@@ -495,10 +328,6 @@ class PivotData:
             save_log(f"\n❌ Lỗi khi lấy recent pivots: {str(e)}", DEBUG_LOG_FILE)
             return []
 
-    def check_pattern(self):
-        """Tạm thời vô hiệu hóa việc kiểm tra pattern"""
-        save_log("\n⚠️ Chức năng check pattern đang tạm thời bị vô hiệu hóa", DEBUG_LOG_FILE)
-        return False, ""
     
     def classify_pivot(self, new_pivot):
         """Phân loại pivot theo logic TradingView"""
@@ -562,7 +391,7 @@ class PivotData:
                 save_log("Không có dữ liệu pivot để lưu", DEBUG_LOG_FILE)
                 return
 
-            # Tạo DataFrame chính
+            # Đơn giản hóa dữ liệu chính
             main_data = []
             for pivot in self.confirmed_pivots:
                 # Tính % thay đổi so với pivot trước
@@ -574,135 +403,73 @@ class PivotData:
                     'Time': pivot['time'],
                     'Type': pivot['type'],
                     'Price': pivot['price'],
-                    'Change%': price_change
+                    'Change%': price_change,
+                    'Comment': self._get_pivot_comment(pivot['type'], price_change)  # Thêm cột comment
                 })
             
             df_main = pd.DataFrame(main_data)
 
-            # Sử dụng ExcelWriter với xlsxwriter
+            # Sử dụng ExcelWriter
             with pd.ExcelWriter('pivots.xlsx', engine='xlsxwriter') as writer:
                 # Sheet chính
-                df_main.to_excel(writer, sheet_name='TestData', index=False, startrow=2)
+                df_main.to_excel(writer, sheet_name='Pivot Analysis', index=False)
                 workbook = writer.book
-                worksheet = writer.sheets['TestData']
+                worksheet = writer.sheets['Pivot Analysis']
                 
-                # Thêm confirmed text ở đầu
-                confirmed_text = " / ".join([
-                    f"{p['type']} {p['time']} ${p['price']:,.2f}" 
-                    for p in self.confirmed_pivots
-                ])
-                worksheet.write(0, 0, "Confirmed Pivots:")
-                worksheet.write(0, 1, confirmed_text)
-                
-                # Định dạng các cột
-                price_format = workbook.add_format({'num_format': '$#,##0.00'})
-                header_format = workbook.add_format({
-                    'bold': True,
-                    'bg_color': '#D9D9D9'
-                })
-                type_format = {
-                    'HH': workbook.add_format({'font_color': 'green', 'bold': True}),
-                    'LL': workbook.add_format({'font_color': 'red', 'bold': True}),
-                    'HL': workbook.add_format({'font_color': 'orange'}),
-                    'LH': workbook.add_format({'font_color': 'blue'})
+                # Định dạng cột
+                formats = {
+                    'Price': {'num_format': '$#,##0.00'},
+                    'Change%': {'num_format': '+0.00%;-0.00%'},
+                    'Type': {
+                        'HH': {'font_color': 'green', 'bold': True},
+                        'LL': {'font_color': 'red', 'bold': True},
+                        'HL': {'font_color': 'orange'},
+                        'LH': {'font_color': 'blue'}
+                    }
                 }
                 
-                # Áp dụng định dạng cho header và cột
-                for col, width in {'A:A': 10, 'B:B': 8, 'C:C': 15, 'D:D': 10}.items():
-                    worksheet.set_column(col, width)
-                
-                # Format headers
-                worksheet.write(2, 0, 'Time', header_format)
-                worksheet.write(2, 1, 'Type', header_format)
-                worksheet.write(2, 2, 'Price', header_format)
-                worksheet.write(2, 3, 'Change%', header_format)
-                
-                # Format data
+                # Áp dụng định dạng
                 for idx, row in df_main.iterrows():
-                    row_pos = idx + 3
-                    worksheet.write(row_pos, 0, row['Time'])
-                    worksheet.write(row_pos, 1, row['Type'], type_format.get(row['Type']))
-                    worksheet.write(row_pos, 2, row['Price'], price_format)
-                    
-                    # Format % thay đổi
-                    if idx > 0:
-                        change_format = workbook.add_format({
-                            'num_format': '+0.00%;-0.00%',
-                            'font_color': 'green' if row['Change%'] > 0 else 'red'
-                        })
-                        worksheet.write(row_pos, 3, row['Change%']/100, change_format)
+                    worksheet.write(idx + 1, df_main.columns.get_loc('Price'), 
+                                 row['Price'], workbook.add_format(formats['Price']))
+                    worksheet.write(idx + 1, df_main.columns.get_loc('Change%'),
+                                 row['Change%']/100, workbook.add_format(formats['Change%']))
+                    worksheet.write(idx + 1, df_main.columns.get_loc('Type'),
+                                 row['Type'], workbook.add_format(formats['Type'][row['Type']]))
 
-                # Tạo biểu đồ
+                # Thêm biểu đồ
                 chart = workbook.add_chart({'type': 'line'})
-                
-                # Thêm series cho giá
                 chart.add_series({
                     'name': 'Price',
-                    'categories': f"='TestData'!$A$4:$A${len(df_main) + 3}",
-                    'values': f"='TestData'!$C$4:$C${len(df_main) + 3}",
+                    'categories': f'=Pivot Analysis!$A$2:$A${len(df_main) + 1}',
+                    'values': f'=Pivot Analysis!$C$2:$C${len(df_main) + 1}',
                     'marker': {'type': 'circle'},
                     'data_labels': {'value': True, 'num_format': '$#,##0.00'}
                 })
                 
                 # Định dạng biểu đồ
                 chart.set_title({'name': 'Pivot Points Analysis'})
-                chart.set_x_axis({
-                    'name': 'Time',
-                    'num_format': 'hh:mm'
-                })
-                chart.set_y_axis({'name': 'Price (USD)'})
                 chart.set_size({'width': 720, 'height': 400})
-                
-                # Thêm biểu đồ vào sheet
-                worksheet.insert_chart('H2', chart)
-                
-                # Thêm thống kê
-                stats_row = len(df_main) + 5
-                worksheet.write(stats_row, 0, "Thống kê:", header_format)
-                worksheet.write(stats_row + 1, 0, "Tổng số pivot:")
-                worksheet.write(stats_row + 1, 1, len(self.confirmed_pivots))
-                worksheet.write(stats_row + 2, 0, "Tổng số nến:")
-                worksheet.write(stats_row + 2, 1, len(self.price_history))
+                worksheet.insert_chart('G2', chart)
 
-            save_log(f"Đã lưu dữ liệu pivot vào Excel với {len(self.confirmed_pivots)} điểm", DEBUG_LOG_FILE)
-            
-        except Exception as e:
-            error_msg = f"Lỗi khi lưu file Excel: {str(e)}"
-            save_log(error_msg, DEBUG_LOG_FILE)
-            logger.error(error_msg)
-    def _get_pattern_for_pivot(self, current_pivot, all_pivots):
-        """Xác định pattern cho một pivot cụ thể"""
-        try:
-            # Lấy 4 pivot trước current_pivot
-            idx = all_pivots.index(current_pivot)
-            if idx < 4:
-                return "Chưa đủ dữ liệu"
+            save_log(f"✅ Đã lưu {len(self.confirmed_pivots)} pivot vào Excel", DEBUG_LOG_FILE)
                 
-            prev_pivots = all_pivots[idx-4:idx]
-            pivot_types = [p['type'] for p in prev_pivots] + [current_pivot['type']]
-            
-            # Kiểm tra các pattern đã định nghĩa
-            pattern_sequences = {
-                "Tăng mạnh": ["HH", "HH", "HH", "HH", "HH"],
-                "Giảm mạnh": ["LL", "LL", "LL", "LL", "LL"],
-                "Đảo chiều tăng": ["LL", "HL", "HH", "HL", "HH"],
-                "Đảo chiều giảm": ["HH", "LH", "LL", "LH", "LL"]
-            }
-            
-            for pattern_name, sequence in pattern_sequences.items():
-                if pivot_types == sequence:
-                    return pattern_name
-                    
-            return "Không xác định"
-            
         except Exception as e:
-            save_log(f"❌ Lỗi khi xác định pattern: {str(e)}", DEBUG_LOG_FILE)
-            return "Lỗi xác định" 
-
+            save_log(f"❌ Lỗi khi lưu Excel: {str(e)}", DEBUG_LOG_FILE)
+            
+    def _get_pivot_comment(self, pivot_type, price_change):
+        """Tạo comment cho pivot dựa trên loại và % thay đổi"""
+        comment = f"{pivot_type}: "
+        if pivot_type in ['HH', 'HL']:
+            comment += "Bullish " if price_change > 0 else "Caution "
+        else:  # LH, LL
+            comment += "Bearish " if price_change < 0 else "Caution "
+        comment += f"({price_change:+.2f}%)"
+        return comment
+        
     def get_all_pivots(self):
         """Lấy tất cả các pivot theo thứ tự thời gian"""
         try:
-            # Chỉ lấy từ confirmed_pivots vì không còn user_pivots
             if not self.confirmed_pivots:
                 return []
                 
@@ -717,8 +484,8 @@ class PivotData:
                 
         except Exception as e:
             save_log(f"❌ Lỗi khi lấy all pivots: {str(e)}", DEBUG_LOG_FILE)
-            return []     
-            
+            return []    
+                
     def add_user_pivot(self, pivot_type, price, time):
         """Thêm pivot từ user với logic mới"""
         try:
@@ -833,7 +600,6 @@ def detect_pivot(price, direction):
     
 def get_binance_price(context: CallbackContext):
     try:
-        # Thay đổi interval từ "5m" sang "30m"
         klines = binance_client.futures_klines(symbol="BTCUSDT", interval="30m", limit=2)
         last_candle = klines[-2]  # Ensure we get the closed candle
         high_price = float(last_candle[2])
@@ -843,15 +609,16 @@ def get_binance_price(context: CallbackContext):
         price_data = {
             "high": high_price,
             "low": low_price,
-            "price": close_price
+            "price": close_price,
+            "time": datetime.now().strftime("%H:%M")
         }
         pivot_data.add_price_data(price_data)
         
-        save_log(f"Thu thập dữ liệu nến 30m: Cao nhất = {high_price}, Thấp nhất = {low_price}", DEBUG_LOG_FILE)
+        save_log(f"Thu thập dữ liệu nến 30m: High=${high_price:,.2f}, Low=${low_price:,.2f}", DEBUG_LOG_FILE)
         
-        detect_pivot(high_price, "H")
-        detect_pivot(low_price, "L")
-        pivot_data.save_to_excel()
+        detect_pivot(high_price, "high")
+        detect_pivot(low_price, "low")
+        
     except Exception as e:
         logger.error(f"Binance API Error: {e}")
         save_log(f"Binance API Error: {e}", DEBUG_LOG_FILE)
@@ -870,7 +637,6 @@ def schedule_next_run(job_queue):
         logger.error(f"Error scheduling next run: {e}")
         save_log(f"Error scheduling next run: {e}", DEBUG_LOG_FILE)
      
-
 def _create_alert_message(pattern_name, current_price, recent_pivots):
     """Tạo thông báo chi tiết khi phát hiện mẫu hình"""
     vietnam_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -909,186 +675,15 @@ def send_alert(message):
     except Exception as e:
         save_log(f"Lỗi gửi cảnh báo: {str(e)}", DEBUG_LOG_FILE)
 
-def moc(update: Update, context: CallbackContext):
-    """ Handles the /moc command to receive multiple pivot points and resets logic."""
-    try:
-        args = context.args
-        
-        logger.info(f"Received /moc command with args: {args}")
-        save_log(f"Received /moc command with args: {args}", DEBUG_LOG_FILE)
-        
-        if len(args) < 4 or (len(args) - 1) % 3 != 0:
-            update.message.reply_text("⚠️ Sai định dạng! Dùng: /moc btc lh 82000 13:30 hl 81000 14:00 hh 83000 14:30")
-            return
-        
-        asset = args[0].lower()
-        if asset != "btc":
-            update.message.reply_text("⚠️ Chỉ hỗ trợ BTC! Ví dụ: /moc btc lh 82000 13:30 hl 81000 14:00 hh 83000 14:30")
-            return
-            
-        # Xóa dữ liệu cũ
-        pivot_data.clear_all()
-        
-        # Ghi nhận các mốc mới
-        valid_pivots = []
-        adjusted_times = []
-        current_time = datetime.now()  # Lấy thời gian hiện tại
-        
-        # Kiểm tra thứ tự thời gian
-        time_points = []
-        for i in range(1, len(args), 3):
-            try:
-                time = args[i + 2].replace('h', ':')
-                time_obj = datetime.strptime(time, "%H:%M")
-                time_points.append(time_obj)
-            except ValueError:
-                continue
-
-        if time_points:
-            if time_points != sorted(time_points):
-                update.message.reply_text("⚠️ Các mốc thời gian phải được nhập theo thứ tự tăng dần!")
-                return
-        
-        for i in range(1, len(args), 3):
-            pivot_type = args[i].upper()
-            if pivot_type not in ["HH", "HL", "LH", "LL"]:
-                update.message.reply_text(f"⚠️ Loại pivot không hợp lệ: {pivot_type}. Chỉ chấp nhận: HH, HL, LH, LL")
-                return
-
-            # Validate giá
-            try:
-                price = float(args[i + 1])
-                if price <= 0:
-                    update.message.reply_text(f"⚠️ Giá phải lớn hơn 0: {args[i + 1]}")
-                    return
-                if price > 500000:  # Giới hạn giá tối đa hợp lý cho BTC
-                    update.message.reply_text(f"⚠️ Giá vượt quá giới hạn cho phép: {args[i + 1]}")
-                    return
-            except ValueError:
-                update.message.reply_text(f"⚠️ Giá không hợp lệ: {args[i + 1]}")
-                return
-
-            # Validate và xử lý thời gian
-            time = args[i + 2].replace('h', ':')
-            try:
-                time_obj = datetime.strptime(time, "%H:%M")
-                
-                # Làm tròn về mốc 30 phút gần nhất
-                minutes = time_obj.minute
-                if minutes % 30 != 0:
-                    adjusted_minutes = 30 * (minutes // 30)
-                    original_time = time
-                    time = time_obj.replace(minute=adjusted_minutes).strftime("%H:%M")
-                    adjusted_times.append((original_time, time))
-                    save_log(f"Đã điều chỉnh thời gian từ {original_time} thành {time} cho phù hợp với timeframe 30m", DEBUG_LOG_FILE)
-            except ValueError:
-                update.message.reply_text(f"⚠️ Lỗi: Định dạng thời gian không đúng! Sử dụng HH:MM (ví dụ: 14:00, 14:30)")
-                return
-
-            # Thêm pivot mới
-            if pivot_data.add_user_pivot(pivot_type, price, time):
-                valid_pivots.append({"type": pivot_type, "price": price, "time": time})
-            else:
-                update.message.reply_text(f"⚠️ Không thể thêm pivot: {pivot_type} at {time}")
-                return
-        
-        # Kiểm tra tính hợp lệ của chuỗi pivot
-        if len(valid_pivots) >= 2:
-            for i in range(1, len(valid_pivots)):
-                curr_pivot = valid_pivots[i]
-                prev_pivot = valid_pivots[i-1]
-                
-                save_log(f"Kiểm tra logic: {curr_pivot['type']} (${curr_pivot['price']}) vs {prev_pivot['type']} (${prev_pivot['price']})", DEBUG_LOG_FILE)
-                
-                # Logic kiểm tra mới
-                if curr_pivot['type'] == "LH":
-                    if prev_pivot['type'] == "LL":
-                        # LH phải cao hơn LL trước đó
-                        if curr_pivot['price'] <= prev_pivot['price']:
-                            error_msg = f"⚠️ Lỗi logic: LH tại {curr_pivot['time']} phải có giá cao hơn LL trước đó!"
-                            save_log(error_msg, DEBUG_LOG_FILE)
-                            update.message.reply_text(error_msg)
-                            return
-                    elif prev_pivot['type'] == "HH":
-                        # LH phải thấp hơn HH trước đó 
-                        if curr_pivot['price'] >= prev_pivot['price']:
-                            error_msg = f"⚠️ Lỗi logic: LH tại {curr_pivot['time']} phải có giá thấp hơn HH trước đó!"
-                            save_log(error_msg, DEBUG_LOG_FILE)
-                            update.message.reply_text(error_msg)
-                            return
-                        
-                elif curr_pivot['type'] == "HL":
-                    if prev_pivot['type'] in ["LH", "HH"]:
-                        # HL phải thấp hơn đỉnh trước đó (LH hoặc HH)
-                        if curr_pivot['price'] >= prev_pivot['price']:
-                            error_msg = f"⚠️ Lỗi logic: HL tại {curr_pivot['time']} phải có giá thấp hơn {prev_pivot['type']} trước đó!"
-                            save_log(error_msg, DEBUG_LOG_FILE)
-                            update.message.reply_text(error_msg)
-                            return
-                    elif prev_pivot['type'] == "LL":
-                        # HL phải cao hơn LL trước đó
-                        if curr_pivot['price'] <= prev_pivot['price']:
-                            error_msg = f"⚠️ Lỗi logic: HL tại {curr_pivot['time']} phải có giá cao hơn LL trước đó!"
-                            save_log(error_msg, DEBUG_LOG_FILE)
-                            update.message.reply_text(error_msg)
-                            return
-                        
-                elif curr_pivot['type'] == "HH":
-                    # HH luôn phải cao hơn pivot trước đó
-                    if curr_pivot['price'] <= prev_pivot['price']:
-                        error_msg = f"⚠️ Lỗi logic: HH tại {curr_pivot['time']} phải có giá cao hơn pivot trước đó!"
-                        save_log(error_msg, DEBUG_LOG_FILE)
-                        update.message.reply_text(error_msg)
-                        return
-                        
-                elif curr_pivot['type'] == "LL":
-                    # LL luôn phải thấp hơn pivot trước đó
-                    if curr_pivot['price'] >= prev_pivot['price']:
-                        error_msg = f"⚠️ Lỗi logic: LL tại {curr_pivot['time']} phải có giá thấp hơn pivot trước đó!"
-                        save_log(error_msg, DEBUG_LOG_FILE)
-                        update.message.reply_text(error_msg)
-                        return
-                        
-                save_log(f"Pivot {curr_pivot['type']} hợp lệ", DEBUG_LOG_FILE)
-        
-        # Ghi đè dữ liệu vào pattern log
-        with open(PATTERN_LOG_FILE, "w", encoding="utf-8") as f:
-            f.write("=== Pattern Log Reset ===\n")
-
-        save_log(f"User Pivots Updated: {pivot_data.user_pivots}", LOG_FILE)
-        save_log(f"User Pivots Updated: {pivot_data.user_pivots}", PATTERN_LOG_FILE)
-        save_to_excel()
-
-        # Tạo phản hồi chi tiết cho người dùng
-        response = "✅ Đã nhận các mốc:\n"
-        for pivot in valid_pivots:
-            response += f"• {pivot['type']} tại ${pivot['price']:,.2f} ({pivot['time']})\n"
-        
-        # Thêm thông báo về các điều chỉnh thời gian (nếu có)
-        if adjusted_times:
-            response += "\nℹ️ Đã điều chỉnh các mốc thời gian sau cho phù hợp với timeframe 30m:\n"
-            for original, adjusted in adjusted_times:
-                response += f"• {original} → {adjusted}\n"
-            
-        update.message.reply_text(response)
-        logger.info(f"User Pivots Updated: {pivot_data.user_provided_pivots}")
-        
-    except Exception as e:
-        error_msg = f"Lỗi xử lý lệnh /moc: {str(e)}"
-        logger.error(error_msg)
-        save_log(error_msg, DEBUG_LOG_FILE)
-        update.message.reply_text(f"⚠️ Có lỗi xảy ra: {str(e)}")
 
 def main():
-    """ Main entry point to start the bot."""
+    """Main entry point to start the bot."""
     try:
         updater = Updater(TOKEN, use_context=True)
         dp = updater.dispatcher
         job_queue = updater.job_queue
-    
-        dp.add_handler(CommandHandler("moc", moc))
         
-        schedule_next_run(job_queue)  # Schedule the first execution at the next 5-minute mark
+        schedule_next_run(job_queue)  # Schedule first run
         
         print("Bot is running...")
         logger.info("Bot started successfully.")
