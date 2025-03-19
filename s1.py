@@ -4,6 +4,7 @@ import pandas as pd
 import os
 import time
 import pytz
+import traceback
 from datetime import datetime, timedelta
 from telegram import Update, Bot
 from telegram.ext import Updater, CommandHandler, CallbackContext, JobQueue
@@ -112,14 +113,12 @@ class PivotData:
     def clear_all(self):
         """Reset về trạng thái ban đầu"""
         self.price_history.clear()
-        self.pivot_points.clear()
         self.confirmed_pivots.clear()
         
         save_log("\n=== Reset Toàn Bộ Dữ Liệu ===", DEBUG_LOG_FILE)
         save_log("✅ Đã xóa price history", DEBUG_LOG_FILE)
-        save_log("✅ Đã xóa pivot points", DEBUG_LOG_FILE)
         save_log("✅ Đã xóa confirmed pivots", DEBUG_LOG_FILE)
-        save_log("==============================", DEBUG_LOG_FILE)   
+        save_log("==============================", DEBUG_LOG_FILE)  
 
     def add_price_data(self, data):
         """Thêm dữ liệu giá mới với logic đơn giản hóa"""
@@ -302,7 +301,8 @@ class PivotData:
                 confirmed_pivot = {
                     'type': pivot_type,
                     'price': new_pivot['price'],
-                    'time': new_pivot['time']
+                    'time': new_pivot['time'],
+                    'direction': new_pivot['direction']  # Thêm direction
                 }
                 if confirmed_pivot not in self.confirmed_pivots:
                     self.confirmed_pivots.append(confirmed_pivot)
@@ -425,7 +425,14 @@ class PivotData:
             recent_pivots = self.get_recent_pivots(3)  # Chỉ cần 3 pivot gần nhất
             if not recent_pivots:
                 # Pivot đầu tiên
-                return "HH" if direction == "high" else "LL"
+                pivot_type = "HH" if direction == "high" else "LL"
+                # Tạo pivot với direction
+                return {
+                    "type": pivot_type,
+                    "price": float(current_price),
+                    "time": self.current_time,
+                    "direction": direction
+                }
 
             last_pivot = None
             for pivot in recent_pivots:
@@ -436,17 +443,26 @@ class PivotData:
                     break
 
             if not last_pivot:
-                return "HH" if direction == "high" else "LL"
-
-            # Logic phân loại đơn giản theo TV
-            if direction == "high":
-                return "HH" if current_price > last_pivot['price'] else "LH"
+                pivot_type = "HH" if direction == "high" else "LL"
             else:
-                return "LL" if current_price < last_pivot['price'] else "HL"
+                # Logic phân loại đơn giản theo TV
+                if direction == "high":
+                    pivot_type = "HH" if current_price > last_pivot['price'] else "LH"
+                else:
+                    pivot_type = "LL" if current_price < last_pivot['price'] else "HL"
+
+            # Trả về pivot với direction
+            return {
+                "type": pivot_type,
+                "price": float(current_price),
+                "time": self.current_time,
+                "direction": direction
+            }
 
         except Exception as e:
             save_log(f"❌ Lỗi khi xác định loại pivot: {str(e)}", DEBUG_LOG_FILE)
-            return None   
+            return None 
+            
 # Create global instance
 pivot_data = PivotData() 
 
