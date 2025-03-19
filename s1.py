@@ -69,13 +69,19 @@ def set_current_time_and_user(current_time, current_user):
                 # Format lại thành string với thông tin múi giờ
                 current_time = vn_time.strftime('%Y-%m-%d %H:%M:%S (GMT+7)')
 
+            except ValueError as e:
+                save_log(f"Error parsing time: {str(e)}", DEBUG_LOG_FILE)
+                return False
+
         pivot_data.current_time = current_time
         pivot_data.current_user = current_user
-        save_log(f"\nCurrent Date and Time (Vietnam): {current_time}", DEBUG_LOG_FILE)  # Sửa UTC thành Vietnam
+        save_log(f"\nCurrent Date and Time (Vietnam): {current_time}", DEBUG_LOG_FILE)
         save_log(f"Current User's Login: {current_user}", DEBUG_LOG_FILE)
+        return True
 
     except Exception as e:
         save_log(f"Error setting time and user: {str(e)}", DEBUG_LOG_FILE)
+        return False
                 
 class PivotData:
     def __init__(self):
