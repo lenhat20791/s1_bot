@@ -151,7 +151,7 @@ class PivotData:
     
                
     def detect_pivot(self, price, direction):
-        """Phát hiện pivot với kiểm tra khoảng cách tối thiểu"""
+        """Phát hiện pivot với kiểm tra khoảng cách dựa trên pivot gần nhất"""
         try:
             if len(self.price_history) < (self.LEFT_BARS + self.RIGHT_BARS + 1):
                 save_log(f"⏳ Đang thu thập dữ liệu: {len(self.price_history)}/{self.LEFT_BARS + self.RIGHT_BARS + 1} nến", DEBUG_LOG_FILE)
@@ -175,16 +175,19 @@ class PivotData:
             if not is_pivot:
                 return None
 
-            # Kiểm tra khoảng cách với pivot gần nhất
-            MIN_BARS_BETWEEN_PIVOTS = 5
+            # Lấy pivot gần nhất làm mốc
             if self.confirmed_pivots:
                 last_pivot = self.confirmed_pivots[-1]
                 last_pivot_time = datetime.strptime(last_pivot['time'], '%H:%M')
                 current_time = datetime.strptime(center_candle['time'], '%H:%M')
-                bars_between = abs((current_time - last_pivot_time).total_seconds() / 1800)  # 1800s = 30 phút
                 
-                if bars_between < MIN_BARS_BETWEEN_PIVOTS:
-                    save_log(f"⚠️ Bỏ qua pivot do khoảng cách quá gần (cần tối thiểu {MIN_BARS_BETWEEN_PIVOTS} nến)", DEBUG_LOG_FILE)
+                # Tính range 5 nến từ pivot gần nhất
+                range_end = last_pivot_time + timedelta(minutes=30 * 5)  # 5 nến sau pivot gần nhất
+                
+                # Nếu thời điểm hiện tại nằm trong range của pivot gần nhất
+                if current_time <= range_end:
+                    save_log(f"⚠️ Bỏ qua pivot tại {center_candle['time']} do nằm trong range 5 nến của pivot gần nhất ({last_pivot['type']} tại {last_pivot['time']})", DEBUG_LOG_FILE)
+                    save_log(f"Range của pivot gần nhất: {last_pivot['time']} -> {range_end.strftime('%H:%M')}", DEBUG_LOG_FILE)
                     return None
 
             # Xác định loại pivot
@@ -203,13 +206,14 @@ class PivotData:
             # Thêm vào danh sách confirmed pivots
             if self._add_confirmed_pivot(new_pivot):
                 save_log(f"✅ Phát hiện pivot {pivot_type} tại {direction} (${pivot_price:,.2f})", "SUCCESS")
+                save_log(f"📊 Pivot này cách pivot gần nhất trên 5 nến", DEBUG_LOG_FILE)
                 return new_pivot
 
             return None
 
         except Exception as e:
             save_log(f"❌ Lỗi khi phát hiện pivot: {str(e)}", DEBUG_LOG_FILE)
-            return None       
+            return None      
     
  
     def _add_confirmed_pivot(self, pivot_data):
