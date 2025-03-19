@@ -117,9 +117,9 @@ class PivotData:
     def clear_all(self):
         """Reset tất cả dữ liệu"""
         self.price_history = []
-        self.pending_pivots = []
         self.confirmed_pivots = []
         self.user_pivots = []    
+        save_log("🔄 Đã reset toàn bộ dữ liệu", DEBUG_LOG_FILE)   
 
     def add_price_data(self, data):
         """Thêm dữ liệu giá mới với logging chi tiết"""
@@ -608,9 +608,9 @@ class PivotData:
         """Xóa một pivot cụ thể"""
         try:
             if pivot_to_remove["source"] == "system":
-                self.detected_pivots = [p for p in self.detected_pivots if p != pivot_to_remove]
+                self.confirmed_pivots = [p for p in self.confirmed_pivots if p != pivot_to_remove]
             else:
-                self.user_provided_pivots = [p for p in self.user_provided_pivots if p != pivot_to_remove]
+                self.user_pivots = [p for p in self.user_pivots if p != pivot_to_remove]
             save_log(f"Đã xóa pivot: {pivot_to_remove}", DEBUG_LOG_FILE)
         except Exception as e:
             save_log(f"Lỗi khi xóa pivot: {str(e)}", DEBUG_LOG_FILE)  
@@ -753,7 +753,7 @@ pivot_data = PivotData()
 # Export functions
 
 # Cuối file s1.py thêm dòng này
-__all__ = ['pivot_data', 'detect_pivot', 'save_log', 'set_current_time_and_user', 'get_current_time', 'get_current_user']
+__all__ = ['pivot_data', 'detect_pivot', 'save_log', 'set_current_time_and_user']
     
 
 def detect_pivot(price, direction):
@@ -983,8 +983,8 @@ def moc(update: Update, context: CallbackContext):
         with open(PATTERN_LOG_FILE, "w", encoding="utf-8") as f:
             f.write("=== Pattern Log Reset ===\n")
 
-        save_log(f"User Pivots Updated: {pivot_data.user_provided_pivots}", LOG_FILE)
-        save_log(f"User Pivots Updated: {pivot_data.user_provided_pivots}", PATTERN_LOG_FILE)
+        save_log(f"User Pivots Updated: {pivot_data.user_pivots}", LOG_FILE)
+        save_log(f"User Pivots Updated: {pivot_data.user_pivots}", PATTERN_LOG_FILE)
         save_to_excel()
 
         # Tạo phản hồi chi tiết cho người dùng
