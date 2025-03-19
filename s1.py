@@ -3,6 +3,7 @@ import json
 import pandas as pd
 import os
 import time
+import pytz
 from datetime import datetime
 from telegram import Update, Bot
 from telegram.ext import Updater, CommandHandler, CallbackContext, JobQueue
@@ -47,11 +48,30 @@ def save_log(log_message, filename):
         
 # Thêm hàm để set các giá trị này
 def set_current_time_and_user(current_time, current_user):
-    """Set thời gian và user hiện tại"""
-    pivot_data.current_time = current_time
-    pivot_data.current_user = current_user
-    save_log(f"\nCurrent Date and Time (UTC): {current_time}", DEBUG_LOG_FILE)
-    save_log(f"Current User's Login: {current_user}", DEBUG_LOG_FILE)
+    """Set thời gian và user hiện tại với support múi giờ Việt Nam"""
+    try:
+        # Chuyển đổi sang múi giờ Việt Nam nếu input là UTC
+        if isinstance(current_time, str):
+            try:
+                # Thử parse thời gian UTC
+                utc_dt = datetime.strptime(current_time, '%Y-%m-%d %H:%M:%S')
+                utc_dt = utc_dt.replace(tzinfo=pytz.UTC)
+                # Chuyển sang múi giờ Việt Nam
+                vn_tz = pytz.timezone('Asia/Ho_Chi_Minh')
+                vn_time = utc_dt.astimezone(vn_tz)
+                # Format lại thành string
+                current_time = vn_time.strftime('%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                # Nếu format không đúng, giữ nguyên giá trị
+                pass
+
+        pivot_data.current_time = current_time
+        pivot_data.current_user = current_user
+        save_log(f"\nCurrent Date and Time (VN): {current_time}", DEBUG_LOG_FILE)
+        save_log(f"Current User's Login: {current_user}", DEBUG_LOG_FILE)
+
+    except Exception as e:
+        save_log(f"Error setting time and user: {str(e)}", DEBUG_LOG_FILE)
 
 # Thêm hàm để lấy các giá trị
 def get_current_time():
@@ -62,37 +82,36 @@ def get_current_user():
         
 class PivotData:
     def __init__(self):
-        """Khởi tạo PivotData object"""
-        # Constants
-        self.MIN_PRICE_CHANGE = 0.002      # 0.4% - Tỉ lệ thay đổi giá tối thiểu
-        self.MIN_PIVOT_DISTANCE = 2        # 2 nến - Khoảng cách tối thiểu giữa các pivot
-        self.CONFIRMATION_CANDLES = 3      # 3 nến xác nhận pivot
-        self.MIN_LOWER_CANDLES = 1         # Số nến thấp hơn để xác nhận High pivot
-        self.MIN_HIGHER_CANDLES = 1        # Số nến cao hơn để xác nhận Low pivot
+        """Khởi tạo PivotData object với logic hoàn toàn mới"""
+        # Constants cho logic mới
+        self.LEFT_BARS = 5        # Số nến so sánh bên trái
+        self.RIGHT_BARS = 5       # Số nến so sánh bên phải
+        self.MIN_PIVOT_POINTS = 4 # Số pivot tối thiểu để xác định pattern
+        self.MIN_PRICE_CHANGE = 0.002  # 0.2% - Tỉ lệ thay đổi giá tối thiểu cho pivot mới
         
-        # Time tracking
-        self.current_time = None           # Thời gian hiện tại
-        self.last_update_time = None       # Thời gian cập nhật cuối cùng
+        # Biến theo dõi thời gian
+        self.current_time = None           
+        self.last_update_time = None       
         
-        # Price data storage
+        # Biến lưu trữ dữ liệu
         self.price_history = []            # Lịch sử giá
-        self.pending_pivots = []           # Các pivot đang chờ xác nhận
-        self.confirmed_pivots = []         # Các pivot đã được xác nhận
+        self.pending_pivots = []           # Các pivot tiềm năng
+        self.confirmed_pivots = []         # Các pivot đã xác nhận
         self.user_pivots = []              # Các pivot do user thêm vào
         
-        # Reference points
-        self.reference_pivots = {          # Pivot tham chiếu cho High/Low
+        # Điểm tham chiếu
+        self.reference_pivots = {          
             'high': None,
             'low': None
         }
         
-        # Tracking stats
-        self.stats = {                     # Thống kê về pivot
-            'total_detected': 0,           # Tổng số pivot phát hiện
-            'total_confirmed': 0,          # Tổng số pivot đã xác nhận
+        # Thống kê
+        self.stats = {                     
+            'total_detected': 0,           
+            'total_confirmed': 0,          
         }
         
-        save_log("🔄 Đã khởi tạo PivotData object", DEBUG_LOG_FILE)
+        save_log("🔄 Đã khởi tạo PivotData object với logic mới hoàn toàn", DEBUG_LOG_FILE)
         
     def set_current_time(self, time):
         """Cập nhật current_time"""
@@ -116,18 +135,10 @@ class PivotData:
 
             # Thêm vào lịch sử giá
             self.price_history.append(data)
-            if len(self.price_history) > self.MIN_PIVOT_DISTANCE:
+            if len(self.price_history) > (self.LEFT_BARS + self.RIGHT_BARS + 1):
                 self.price_history.pop(0)
 
-            # Xác nhận các pivot đang chờ
-            confirmed = self.validate_pending_pivots(data["price"], data["time"])
-            if confirmed:
-                for pivot in confirmed:
-                    self.confirmed_pivots.append(pivot)
-                    self.stats['total_confirmed'] += 1
-
             # Phát hiện pivot mới
-            # Sửa "H" thành "high" và "L" thành "low"
             high_pivot = self.detect_pivot(data["high"], "high")
             if high_pivot:
                 self.stats['total_detected'] += 1
@@ -360,58 +371,50 @@ class PivotData:
             return False
             
     def detect_pivot(self, price, direction):
-        """Phát hiện pivot từ giá và hướng"""
+        """
+        Phát hiện pivot với so sánh LEFT_BARS nến trước và RIGHT_BARS nến sau
+        """
         try:
-            # Kiểm tra reference pivot
-            ref_pivot = self.reference_pivots[direction]
-            if not ref_pivot:
-                # Nếu chưa có reference, tạo mới
-                self.reference_pivots[direction] = {
-                    "price": price,
-                    "time": self.current_time
-                }
-                save_log(f"📍 Tạo reference {direction} pivot: ${price:,.2f}", DEBUG_LOG_FILE)
+            # 1. Kiểm tra đủ dữ liệu
+            if len(self.price_history) < (self.LEFT_BARS + self.RIGHT_BARS + 1):
+                save_log(f"⏳ Chưa đủ dữ liệu (cần {self.LEFT_BARS + self.RIGHT_BARS + 1} nến)", DEBUG_LOG_FILE)
                 return None
 
-            # Tính % thay đổi giá
-            price_change = abs(price - ref_pivot["price"]) / ref_pivot["price"]
+            # 2. Lấy dữ liệu để phân tích
+            current_idx = len(self.price_history) - self.RIGHT_BARS - 1
+            left_prices = [
+                candle[direction] if isinstance(candle, dict) else candle['high'] if direction == 'high' else candle['low']
+                for candle in self.price_history[current_idx - self.LEFT_BARS:current_idx]
+            ]
+            right_prices = [
+                candle[direction] if isinstance(candle, dict) else candle['high'] if direction == 'high' else candle['low']
+                for candle in self.price_history[current_idx + 1:current_idx + self.RIGHT_BARS + 1]
+            ]
+            current_price = price
 
-            # Log thông tin kiểm tra
-            save_log(f"\nKiểm tra điều kiện thêm pivot:", DEBUG_LOG_FILE)
-            save_log(f"Loại: {direction}", DEBUG_LOG_FILE)
-            save_log(f"Giá hiện tại: ${price:,.2f}", DEBUG_LOG_FILE)
-            save_log(f"Giá tham chiếu: ${ref_pivot['price']:,.2f}", DEBUG_LOG_FILE)
-            save_log(f"Biên độ: {price_change*100:.2f}%", DEBUG_LOG_FILE)
-
+            # 3. Kiểm tra điều kiện pivot
             if direction == "high":
-                if price > ref_pivot["price"] and price_change >= self.MIN_PRICE_CHANGE:
-                    # Phát hiện HH
-                    pivot_type = "HH"
-                    self.add_pending_pivot(pivot_type, price)
-                    save_log(f"✅ Phát hiện HH tại ${price:,.2f}", DEBUG_LOG_FILE)
-                    return True
-                elif price < ref_pivot["price"] and price_change >= self.MIN_PRICE_CHANGE:
-                    # Phát hiện LH 
-                    pivot_type = "LH"
-                    self.add_pending_pivot(pivot_type, price)
-                    save_log(f"✅ Phát hiện LH tại ${price:,.2f}", DEBUG_LOG_FILE)
-                    return True
-                    
+                # Kiểm tra High Pivot
+                is_higher_than_left = all(current_price > p for p in left_prices)
+                is_higher_than_right = all(current_price > p for p in right_prices)
+                
+                if is_higher_than_left and is_higher_than_right:
+                    pivot_type = self._determine_high_pivot_type(current_price)
+                    if pivot_type:
+                        save_log(f"✅ Phát hiện {pivot_type} tại ${current_price:,.2f}", DEBUG_LOG_FILE)
+                        return self._add_confirmed_pivot(pivot_type, current_price)
+                        
             else:  # direction == "low"
-                if price < ref_pivot["price"] and price_change >= self.MIN_PRICE_CHANGE:
-                    # Phát hiện LL
-                    pivot_type = "LL"
-                    self.add_pending_pivot(pivot_type, price)
-                    save_log(f"✅ Phát hiện LL tại ${price:,.2f}", DEBUG_LOG_FILE)
-                    return True
-                elif price > ref_pivot["price"] and price_change >= self.MIN_PRICE_CHANGE:
-                    # Phát hiện HL
-                    pivot_type = "HL"
-                    self.add_pending_pivot(pivot_type, price)
-                    save_log(f"✅ Phát hiện HL tại ${price:,.2f}", DEBUG_LOG_FILE)
-                    return True
+                # Kiểm tra Low Pivot
+                is_lower_than_left = all(current_price < p for p in left_prices)
+                is_lower_than_right = all(current_price < p for p in right_prices)
+                
+                if is_lower_than_left and is_lower_than_right:
+                    pivot_type = self._determine_low_pivot_type(current_price)
+                    if pivot_type:
+                        save_log(f"✅ Phát hiện {pivot_type} tại ${current_price:,.2f}", DEBUG_LOG_FILE)
+                        return self._add_confirmed_pivot(pivot_type, current_price)
 
-            save_log("❌ Không phát hiện pivot mới", DEBUG_LOG_FILE)
             return None
 
         except Exception as e:
@@ -492,6 +495,92 @@ class PivotData:
             return "HH" if price > last_pivot["price"] else "LH"
         else:
             return "LL" if price < last_pivot["price"] else "HL"
+
+    def _determine_high_pivot_type(self, price):
+        """Xác định loại pivot cao (HH hoặc LH)"""
+        try:
+            # Lấy các pivot đã xác nhận gần nhất
+            recent_pivots = self.get_recent_pivots(4)
+            if len(recent_pivots) < 2:
+                return "HH"  # Pivot cao đầu tiên mặc định là HH
+
+            last_high = None
+            # Tìm đỉnh cao gần nhất
+            for pivot in reversed(recent_pivots):
+                if pivot['type'] in ['HH', 'LH']:
+                    last_high = pivot
+                    break
+
+            if last_high:
+                # So sánh với đỉnh cao trước đó
+                if price > last_high['price']:
+                    return "HH"
+                else:
+                    return "LH"
+            else:
+                return "HH"
+
+        except Exception as e:
+            save_log(f"Lỗi xác định high pivot type: {str(e)}", DEBUG_LOG_FILE)
+            return None
+
+    def _determine_low_pivot_type(self, price):
+        """Xác định loại pivot thấp (LL hoặc HL)"""
+        try:
+            # Lấy các pivot đã xác nhận gần nhất
+            recent_pivots = self.get_recent_pivots(4)
+            if len(recent_pivots) < 2:
+                return "LL"  # Pivot thấp đầu tiên mặc định là LL
+
+            last_low = None
+            # Tìm đáy thấp gần nhất
+            for pivot in reversed(recent_pivots):
+                if pivot['type'] in ['LL', 'HL']:
+                    last_low = pivot
+                    break
+
+            if last_low:
+                # So sánh với đáy thấp trước đó
+                if price < last_low['price']:
+                    return "LL"
+                else:
+                    return "HL"
+            else:
+                return "LL"
+
+        except Exception as e:
+            save_log(f"Lỗi xác định low pivot type: {str(e)}", DEBUG_LOG_FILE)
+            return None
+
+    def _add_confirmed_pivot(self, pivot_type, price):
+        """Thêm pivot đã được xác nhận"""
+        try:
+            # Kiểm tra khoảng cách giá với pivot trước
+            last_pivot = self.get_recent_pivots(1)
+            if last_pivot:
+                last_pivot = last_pivot[0]
+                price_change = abs(price - last_pivot['price']) / last_pivot['price']
+                if price_change < self.MIN_PRICE_CHANGE:
+                    save_log(f"❌ Biến động giá quá nhỏ: {price_change:.2%}", DEBUG_LOG_FILE)
+                    return False
+
+            # Tạo pivot mới
+            new_pivot = {
+                "type": pivot_type,
+                "price": price,
+                "time": self.current_time
+            }
+            
+            self.confirmed_pivots.append(new_pivot)
+            self.stats['total_confirmed'] += 1
+            save_log(f"✅ Đã thêm {pivot_type} tại ${price:,.2f}", DEBUG_LOG_FILE)
+            
+            return True
+
+        except Exception as e:
+            save_log(f"Lỗi khi thêm confirmed pivot: {str(e)}", DEBUG_LOG_FILE)
+            return False
+    
 
     def _calculate_time_diff(self, pivot_time):
         """Tính khoảng cách thời gian với pivot"""
