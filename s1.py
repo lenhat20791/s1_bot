@@ -334,8 +334,7 @@ class PivotData:
                     'Time': pivot['time'],
                     'Type': pivot['type'],
                     'Price': pivot['price'],
-                    'Change%': price_change,
-                    'Comment': self._get_pivot_comment(pivot['type'], price_change)  # Thêm cột comment
+                    'Change%': price_change
                 })
             
             df_main = pd.DataFrame(main_data)
@@ -349,24 +348,26 @@ class PivotData:
                 
                 # Định dạng cột
                 formats = {
-                    'Price': {'num_format': '$#,##0.00'},
-                    'Change%': {'num_format': '+0.00%;-0.00%'},
+                    'Price': workbook.add_format({'num_format': '$#,##0.00'}),
+                    'Change%': workbook.add_format({'num_format': '+0.00%;-0.00%'}),
                     'Type': {
-                        'HH': {'font_color': 'green', 'bold': True},
-                        'LL': {'font_color': 'red', 'bold': True},
-                        'HL': {'font_color': 'orange'},
-                        'LH': {'font_color': 'blue'}
+                        'HH': workbook.add_format({'font_color': 'green', 'bold': True}),
+                        'LL': workbook.add_format({'font_color': 'red', 'bold': True}),
+                        'HL': workbook.add_format({'font_color': 'orange'}),
+                        'LH': workbook.add_format({'font_color': 'blue'})
                     }
                 }
                 
                 # Áp dụng định dạng
                 for idx, row in df_main.iterrows():
-                    worksheet.write(idx + 1, df_main.columns.get_loc('Price'), 
-                                 row['Price'], workbook.add_format(formats['Price']))
-                    worksheet.write(idx + 1, df_main.columns.get_loc('Change%'),
-                                 row['Change%']/100, workbook.add_format(formats['Change%']))
-                    worksheet.write(idx + 1, df_main.columns.get_loc('Type'),
-                                 row['Type'], workbook.add_format(formats['Type'][row['Type']]))
+                    row_pos = idx + 1
+                    worksheet.write(row_pos, df_main.columns.get_loc('Time'), row['Time'])
+                    worksheet.write(row_pos, df_main.columns.get_loc('Type'), 
+                                 row['Type'], formats['Type'][row['Type']])
+                    worksheet.write(row_pos, df_main.columns.get_loc('Price'), 
+                                 row['Price'], formats['Price'])
+                    worksheet.write(row_pos, df_main.columns.get_loc('Change%'), 
+                                 row['Change%']/100, formats['Change%'])
 
                 # Thêm biểu đồ
                 chart = workbook.add_chart({'type': 'line'})
