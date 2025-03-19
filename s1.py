@@ -95,7 +95,7 @@ class PivotData:
         # Các thông số cơ bản
         self.LEFT_BARS = 5        # Số nến so sánh bên trái
         self.RIGHT_BARS = 5       # Số nến so sánh bên phải
-        
+        self.MIN_BARS_BETWEEN_PIVOTS = 5
         # Lưu trữ dữ liệu
         self.price_history = []   # Lịch sử giá
         self.confirmed_pivots = [] # Các pivot đã xác nhận
@@ -151,46 +151,59 @@ class PivotData:
     
                
     def detect_pivot(self, price, direction):
-        """Phát hiện pivot với logic TradingView đơn giản hóa"""
+        """Phát hiện pivot với kiểm tra khoảng cách tối thiểu"""
         try:
-            # 1. Kiểm tra đủ dữ liệu
             if len(self.price_history) < (self.LEFT_BARS + self.RIGHT_BARS + 1):
                 save_log(f"⏳ Đang thu thập dữ liệu: {len(self.price_history)}/{self.LEFT_BARS + self.RIGHT_BARS + 1} nến", DEBUG_LOG_FILE)
                 return None
 
-            # 2. Lấy center candle và các nến xung quanh
             center_idx = self.LEFT_BARS
             center_candle = self.price_history[center_idx]
             left_bars = self.price_history[:center_idx]
             right_bars = self.price_history[center_idx + 1:]
 
-            pivot_found = False
-            pivot_type = None
-            pivot_price = None
+            # Kiểm tra điều kiện cơ bản của pivot
+            if direction == "high":
+                is_pivot = all(center_candle['high'] > bar['high'] for bar in left_bars) and \
+                          all(center_candle['high'] > bar['high'] for bar in right_bars)
+                pivot_price = center_candle['high']
+            else:
+                is_pivot = all(center_candle['low'] < bar['low'] for bar in left_bars) and \
+                          all(center_candle['low'] < bar['low'] for bar in right_bars)
+                pivot_price = center_candle['low']
 
-            # 3. Logic TV đơn giản: So sánh với các nến xung quanh
-            if direction.lower() == "high":
-                # Kiểm tra pivot high
-                if all(center_candle['high'] > bar['high'] for bar in left_bars) and \
-                   all(center_candle['high'] > bar['high'] for bar in right_bars):
-                    pivot_found = True
-                    pivot_price = center_candle['high']
-                    # Xác định loại pivot high (HH hoặc LH)
-                    pivot_type = self._determine_pivot_type(pivot_price, "high")
-                    
-            elif direction.lower() == "low":
-                # Kiểm tra pivot low
-                if all(center_candle['low'] < bar['low'] for bar in left_bars) and \
-                   all(center_candle['low'] < bar['low'] for bar in right_bars):
-                    pivot_found = True
-                    pivot_price = center_candle['low']
-                    # Xác định loại pivot low (LL hoặc HL)
-                    pivot_type = self._determine_pivot_type(pivot_price, "low")
+            if not is_pivot:
+                return None
 
-            # 4. Nếu tìm thấy pivot, thêm vào danh sách
-            if pivot_found and pivot_type:
-                save_log(f"✅ Phát hiện {pivot_type} tại ${pivot_price:,.2f}", DEBUG_LOG_FILE)
-                return self._add_confirmed_pivot(pivot_type, pivot_price)
+            # Kiểm tra khoảng cách với pivot gần nhất
+            MIN_BARS_BETWEEN_PIVOTS = 5
+            if self.confirmed_pivots:
+                last_pivot = self.confirmed_pivots[-1]
+                last_pivot_time = datetime.strptime(last_pivot['time'], '%H:%M')
+                current_time = datetime.strptime(center_candle['time'], '%H:%M')
+                bars_between = abs((current_time - last_pivot_time).total_seconds() / 1800)  # 1800s = 30 phút
+                
+                if bars_between < MIN_BARS_BETWEEN_PIVOTS:
+                    save_log(f"⚠️ Bỏ qua pivot do khoảng cách quá gần (cần tối thiểu {MIN_BARS_BETWEEN_PIVOTS} nến)", DEBUG_LOG_FILE)
+                    return None
+
+            # Xác định loại pivot
+            pivot_type = self._determine_pivot_type(pivot_price, direction)
+            if not pivot_type:
+                return None
+
+            # Tạo pivot mới
+            new_pivot = {
+                'type': pivot_type,
+                'price': float(pivot_price),
+                'time': center_candle['time'],
+                'direction': direction
+            }
+
+            # Thêm vào danh sách confirmed pivots
+            if self._add_confirmed_pivot(new_pivot):
+                save_log(f"✅ Phát hiện pivot {pivot_type} tại {direction} (${pivot_price:,.2f})", "SUCCESS")
+                return new_pivot
 
             return None
 
@@ -199,40 +212,27 @@ class PivotData:
             return None       
     
  
-    def _add_confirmed_pivot(self, pivot_type, price, current_time=None):
-        """Thêm pivot đã được xác nhận với logging chi tiết"""
+    def _add_confirmed_pivot(self, pivot_data):
+        """Thêm một pivot đã xác nhận"""
         try:
-            # Nếu không có current_time, dùng self.current_time
-            pivot_time = current_time if current_time else self.current_time
-            
-            save_log("\n=== Thêm Confirmed Pivot ===", DEBUG_LOG_FILE)
-            save_log(f"Type: {pivot_type}", DEBUG_LOG_FILE)
-            save_log(f"Price: ${price:,.2f}", DEBUG_LOG_FILE)
-            save_log(f"Time: {pivot_time}", DEBUG_LOG_FILE)
-            
-            # Tạo pivot mới với key 'type' rõ ràng
-            new_pivot = {
-                "type": pivot_type,  # Đảm bảo có key 'type'
-                "price": float(price),
-                "time": pivot_time
-            }
-            
-            # Log thông tin pivot mới
-            save_log(f"New pivot data: {new_pivot}", DEBUG_LOG_FILE)
+            # pivot_data phải có các trường bắt buộc
+            if not all(key in pivot_data for key in ['type', 'price', 'time']):
+                save_log("❌ Dữ liệu pivot không hợp lệ", DEBUG_LOG_FILE)
+                return False
+                
+            # Kiểm tra xem pivot đã tồn tại chưa
+            for pivot in self.confirmed_pivots:
+                if pivot['time'] == pivot_data['time'] and pivot['price'] == pivot_data['price']:
+                    save_log("⚠️ Pivot này đã tồn tại", DEBUG_LOG_FILE)
+                    return False
 
-            # Kiểm tra trùng lặp
-            if new_pivot not in self.confirmed_pivots:
-                self.confirmed_pivots.append(new_pivot)
-                save_log(f"✅ Đã thêm pivot: {pivot_type} tại ${price:,.2f} ({pivot_time})", DEBUG_LOG_FILE)
-                save_log(f"📊 Tổng số confirmed pivots: {len(self.confirmed_pivots)}", DEBUG_LOG_FILE)
-                return True
-
-            save_log("⚠️ Pivot này đã tồn tại", DEBUG_LOG_FILE)
-            return False
-
+            self.confirmed_pivots.append(pivot_data)
+            save_log(f"✅ Đã thêm pivot: {pivot_data['type']} tại ${pivot_data['price']:,.2f} ({pivot_data['time']})", DEBUG_LOG_FILE)
+            save_log(f"📊 Tổng số confirmed pivots: {len(self.confirmed_pivots)}", DEBUG_LOG_FILE)
+            return True
+            
         except Exception as e:
-            save_log(f"❌ Lỗi khi thêm confirmed pivot: {str(e)}", DEBUG_LOG_FILE)
-            save_log(f"Stack trace: {traceback.format_exc()}", DEBUG_LOG_FILE)
+            save_log(f"❌ Lỗi khi thêm pivot: {str(e)}", DEBUG_LOG_FILE)
             return False
     
 
@@ -462,6 +462,29 @@ class PivotData:
         except Exception as e:
             save_log(f"❌ Lỗi khi xác định loại pivot: {str(e)}", DEBUG_LOG_FILE)
             return None 
+    
+    def _is_valid_pivot_spacing(self, new_pivot_time):
+        """Kiểm tra khoảng cách giữa pivot mới và pivot gần nhất"""
+        try:
+            if not self.confirmed_pivots:
+                return True
+                
+            last_pivot = self.confirmed_pivots[-1]
+            last_pivot_time = datetime.strptime(last_pivot['time'], '%H:%M')
+            new_time = datetime.strptime(new_pivot_time, '%H:%M')
+            
+            # Tính số nến giữa 2 pivot (mỗi nến 30 phút)
+            bars_between = abs((new_time - last_pivot_time).total_seconds() / 1800)
+            
+            is_valid = bars_between >= self.MIN_BARS_BETWEEN_PIVOTS
+            if not is_valid:
+                save_log(f"⚠️ Bỏ qua pivot do khoảng cách quá gần (cần tối thiểu {self.MIN_BARS_BETWEEN_PIVOTS} nến)", DEBUG_LOG_FILE)
+                
+            return is_valid
+            
+        except Exception as e:
+            save_log(f"❌ Lỗi khi kiểm tra khoảng cách pivot: {str(e)}", DEBUG_LOG_FILE)
+            return False
             
 # Create global instance
 pivot_data = PivotData() 
