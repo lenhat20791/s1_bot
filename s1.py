@@ -219,22 +219,21 @@ class PivotData:
         - Cập nhật/xác nhận các pivot đang chờ
         """
         try:
-            # 1. Chuyển đổi thời gian UTC sang VN
+            # Chuyển đổi thời gian sang VN
             utc_time = datetime.strptime(candle_data['time'], '%H:%M')
             vn_time = (utc_time + timedelta(hours=7)).strftime('%H:%M')
-            current_utc = datetime.strptime("2025-03-20 10:14:38", "%Y-%m-%d %H:%M:%S")
-            current_vn = (current_utc + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S")
 
-            # 2. Log thông tin nến mới
-            save_log("\n" + "="*50, DEBUG_LOG_FILE)
-            save_log(f"📊 NẾN MỚI - {vn_time} (GMT+7)", DEBUG_LOG_FILE)
-            save_log(f"⏰ Thời gian hiện tại: {current_vn}", DEBUG_LOG_FILE)
-            save_log(f"👤 User: {self.user_login}", DEBUG_LOG_FILE)
-            save_log("-"*30, DEBUG_LOG_FILE)
-            save_log(f"High: ${candle_data['high']:,.2f}", DEBUG_LOG_FILE)
-            save_log(f"Low: ${candle_data['low']:,.2f}", DEBUG_LOG_FILE)
-            save_log(f"Open: ${candle_data['open']:,.2f}", DEBUG_LOG_FILE)
-            save_log(f"Close: ${candle_data['close']:,.2f}", DEBUG_LOG_FILE)
+            save_log(f"\n=== Nến {vn_time} (GMT+7) ===", "DETAIL")
+            save_log(f"Giá: ${candle_data['close']:,.2f}", "INFO")
+
+            # Kiểm tra biến động
+            price_range = candle_data['high'] - candle_data['low']
+            if price_range > 200:
+                save_log(f"⚠️ Biến động lớn: ${candle_data['high']:,.2f} - ${candle_data['low']:,.2f}", "INFO")
+
+            save_log("\n=== Nến Mới ===")
+            save_log(f"⏰ Thời điểm: {vn_time} (GMT+7)")
+            save_log(f"📊 High: ${candle_data['high']:,.2f}, Low: ${candle_data['low']:,.2f}")
 
             # 3. Kiểm tra biến động bất thường
             price_range = candle_data['high'] - candle_data['low']
