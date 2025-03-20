@@ -153,16 +153,18 @@ class PivotData:
     def detect_pivot(self, price, direction):
         """Phát hiện pivot với kiểm tra khoảng cách dựa trên pivot gần nhất"""
         try:
+            # 1. Kiểm tra đủ số lượng nến
             if len(self.price_history) < (self.LEFT_BARS + self.RIGHT_BARS + 1):
                 save_log(f"⏳ Đang thu thập dữ liệu: {len(self.price_history)}/{self.LEFT_BARS + self.RIGHT_BARS + 1} nến", DEBUG_LOG_FILE)
                 return None
 
+            # 2. Xác định nến trung tâm và các nến xung quanh
             center_idx = self.LEFT_BARS
             center_candle = self.price_history[center_idx]
             left_bars = self.price_history[:center_idx]
             right_bars = self.price_history[center_idx + 1:]
 
-            # Kiểm tra điều kiện cơ bản của pivot
+            # 3. Kiểm tra điều kiện cơ bản của pivot
             if direction == "high":
                 is_pivot = all(center_candle['high'] > bar['high'] for bar in left_bars) and \
                           all(center_candle['high'] > bar['high'] for bar in right_bars)
@@ -175,27 +177,50 @@ class PivotData:
             if not is_pivot:
                 return None
 
-            # Lấy pivot gần nhất làm mốc
+            # 4. Kiểm tra khoảng cách với pivot gần nhất
             if self.confirmed_pivots:
                 last_pivot = self.confirmed_pivots[-1]
+                
+                # Tránh so sánh với chính nó
+                if last_pivot['time'] == center_candle['time']:
+                    return None
+                    
                 last_pivot_time = datetime.strptime(last_pivot['time'], '%H:%M')
                 current_time = datetime.strptime(center_candle['time'], '%H:%M')
                 
-                # Tính range 5 nến từ pivot gần nhất
-                range_end = last_pivot_time + timedelta(minutes=30 * 5)  # 5 nến sau pivot gần nhất
-                
-                # Nếu thời điểm hiện tại nằm trong range của pivot gần nhất
-                if current_time <= range_end:
-                    save_log(f"⚠️ Bỏ qua pivot tại {center_candle['time']} do nằm trong range 5 nến của pivot gần nhất ({last_pivot['type']} tại {last_pivot['time']})", DEBUG_LOG_FILE)
-                    save_log(f"Range của pivot gần nhất: {last_pivot['time']} -> {range_end.strftime('%H:%M')}", DEBUG_LOG_FILE)
-                    return None
+                # Tính số nến giữa hai pivot
+                if current_time.hour < last_pivot_time.hour:
+                    # Qua ngày mới
+                    minutes_to_midnight = (24 * 60) - (last_pivot_time.hour * 60 + last_pivot_time.minute)
+                    minutes_from_midnight = current_time.hour * 60 + current_time.minute
+                    total_minutes = minutes_to_midnight + minutes_from_midnight
+                    bars_between = total_minutes / 30
+                    
+                    save_log(f"📅 Qua ngày mới: {last_pivot['time']} -> {center_candle['time']}", DEBUG_LOG_FILE)
+                    save_log(f"🕒 Phút đến nửa đêm: {minutes_to_midnight}, Phút từ nửa đêm: {minutes_from_midnight}", DEBUG_LOG_FILE)
+                    save_log(f"📊 Tổng số nến qua ngày mới: {bars_between:.1f}", DEBUG_LOG_FILE)
+                else:
+                    # Cùng ngày
+                    minutes_between = (current_time.hour * 60 + current_time.minute) - (last_pivot_time.hour * 60 + last_pivot_time.minute)
+                    bars_between = minutes_between / 30
+                    
+                    save_log(f"🕒 Cùng ngày: {last_pivot['time']} -> {center_candle['time']}", DEBUG_LOG_FILE)
+                    save_log(f"📊 Số nến: {bars_between:.1f}", DEBUG_LOG_FILE)
 
-            # Xác định loại pivot
+                # Kiểm tra khoảng cách tối thiểu
+                if bars_between < self.MIN_BARS_BETWEEN_PIVOTS:
+                    save_log(f"⚠️ Bỏ qua pivot tại {center_candle['time']} do chỉ cách pivot trước {bars_between:.1f} nến", DEBUG_LOG_FILE)
+                    save_log(f"⏱️ Yêu cầu tối thiểu {self.MIN_BARS_BETWEEN_PIVOTS} nến", DEBUG_LOG_FILE)
+                    return None
+                
+                save_log(f"✅ Đủ khoảng cách: {bars_between:.1f} nến > {self.MIN_BARS_BETWEEN_PIVOTS} nến", DEBUG_LOG_FILE)
+
+            # 5. Xác định loại pivot
             pivot_type = self._determine_pivot_type(pivot_price, direction)
             if not pivot_type:
                 return None
 
-            # Tạo pivot mới
+            # 6. Tạo và thêm pivot mới
             new_pivot = {
                 'type': pivot_type,
                 'price': float(pivot_price),
@@ -203,17 +228,33 @@ class PivotData:
                 'direction': direction
             }
 
-            # Thêm vào danh sách confirmed pivots
             if self._add_confirmed_pivot(new_pivot):
                 save_log(f"✅ Phát hiện pivot {pivot_type} tại {direction} (${pivot_price:,.2f})", "SUCCESS")
-                save_log(f"📊 Pivot này cách pivot gần nhất trên 5 nến", DEBUG_LOG_FILE)
                 return new_pivot
 
             return None
 
         except Exception as e:
             save_log(f"❌ Lỗi khi phát hiện pivot: {str(e)}", DEBUG_LOG_FILE)
-            return None      
+            return None
+
+def _calculate_bars_between(self, time1, time2):
+    """Tính số nến giữa hai thời điểm, xử lý cả trường hợp qua ngày"""
+    try:
+        if time2.hour < time1.hour:
+            # Qua ngày mới
+            minutes_to_midnight = (24 * 60) - (time1.hour * 60 + time1.minute)
+            minutes_from_midnight = time2.hour * 60 + time2.minute
+            total_minutes = minutes_to_midnight + minutes_from_midnight
+        else:
+            # Cùng ngày
+            total_minutes = (time2.hour * 60 + time2.minute) - (time1.hour * 60 + time1.minute)
+        
+        return total_minutes / 30
+
+    except Exception as e:
+        save_log(f"❌ Lỗi khi tính số nến giữa hai thời điểm: {str(e)}", DEBUG_LOG_FILE)
+        return 0 
     
  
     def _add_confirmed_pivot(self, pivot_data):
