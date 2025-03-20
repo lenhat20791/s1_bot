@@ -383,53 +383,77 @@ class PivotData:
 
                 # Thêm biểu đồ
                 chart = workbook.add_chart({'type': 'line'})
-                
+
+                # Series cho đường giá chung (đường nối giữa các pivot)
+                chart.add_series({
+                    'name': 'Price',
+                    'categories': f"='Pivot Analysis'!$A$2:$A${len(df_main) + 1}",
+                    'values': f"='Pivot Analysis'!$C$2:$C${len(df_main) + 1}",
+                    'line': {'color': 'gray', 'width': 1},
+                    'marker': {'type': 'none'}
+                })
+
                 # Thêm series cho từng loại pivot
-                for pivot_type in valid_pivot_types:
-                    # Tạo công thức có điều kiện để chỉ lấy giá của pivot type tương ứng
-                    row_count = len(df_main) + 1
-                    category_formula = f'=IF(Pivot Analysis!$B$2:$B${row_count}="{pivot_type}",Pivot Analysis!$A$2:$A${row_count},NA())'
-                    value_formula = f'=IF(Pivot Analysis!$B$2:$B${row_count}="{pivot_type}",Pivot Analysis!$C$2:$C${row_count},NA())'
-                    
-                    # Định dạng cho từng loại pivot
-                    marker_colors = {
-                        'HH': {'color': 'green', 'type': 'circle'},
-                        'LL': {'color': 'red', 'type': 'circle'},
-                        'HL': {'color': 'orange', 'type': 'square'},
-                        'LH': {'color': 'blue', 'type': 'square'}
-                    }
-                    
-                    # Thêm series vào biểu đồ
-                    chart.add_series({
-                        'name': pivot_type,
-                        'categories': category_formula,
-                        'values': value_formula,
-                        'marker': {
-                            'type': marker_colors[pivot_type]['type'],
-                            'size': 8,
-                            'color': marker_colors[pivot_type]['color']
-                        },
-                        'line': {'color': marker_colors[pivot_type]['color']},
-                        'data_labels': {'value': True, 'num_format': '$#,##0.00'}
-                    })
-                
+                pivot_styles = {
+                    'HH': {'color': 'green', 'marker': 'diamond'},
+                    'LL': {'color': 'red', 'marker': 'diamond'},
+                    'HL': {'color': 'orange', 'marker': 'square'},
+                    'LH': {'color': 'blue', 'marker': 'square'}
+                }
+
+                for pivot_type, style in pivot_styles.items():
+                    type_points = df_main[df_main['Type'] == pivot_type]
+                    if not type_points.empty:
+                        chart.add_series({
+                            'name': pivot_type,
+                            'categories': [
+                                'Pivot Analysis',
+                                1,
+                                0,  # Time column
+                                len(type_points),
+                                0
+                            ],
+                            'values': [
+                                'Pivot Analysis',
+                                1,
+                                2,  # Price column
+                                len(type_points),
+                                2
+                            ],
+                            'line': {'color': style['color']},  # Giữ lại đường nối
+                            'marker': {
+                                'type': style['marker'],
+                                'size': 8,
+                                'color': style['color']
+                            }
+                        })
+
                 # Định dạng biểu đồ
                 chart.set_title({'name': 'Pivot Points Analysis'})
+                chart.set_x_axis({
+                    'name': 'Time',
+                    'label_position': 'low',
+                    'major_unit': 10
+                })
+                chart.set_y_axis({
+                    'name': 'Price',
+                    'num_format': '$#,##0'
+                })
                 chart.set_size({'width': 720, 'height': 400})
                 chart.set_legend({'position': 'bottom'})
-                
+
                 # Thêm biểu đồ vào worksheet
                 worksheet.insert_chart('G2', chart)
 
-            # Log thông tin về số lượng pivot theo từng loại
-            pivot_counts = []
-            for pivot_type in valid_pivot_types:
-                count = len([p for p in valid_pivots if p["type"] == pivot_type])
-                pivot_counts.append(f"{pivot_type}: {count}")
-            
-            save_log(f"✅ Đã lưu {len(valid_pivots)} pivot hợp lệ vào Excel", DEBUG_LOG_FILE)
-            save_log(f"📊 Phân loại: {', '.join(pivot_counts)}", DEBUG_LOG_FILE)
+                # Log thông tin về số lượng pivot theo từng loại
+                pivot_counts = []
+                for pivot_type in valid_pivot_types:
+                    count = len([p for p in valid_pivots if p["type"] == pivot_type])
+                    pivot_counts.append(f"{pivot_type}: {count}")
                 
+                save_log(f"✅ Đã lưu {len(valid_pivots)} pivot hợp lệ vào Excel", DEBUG_LOG_FILE)
+                save_log(f"📊 Phân loại: {', '.join(pivot_counts)}", DEBUG_LOG_FILE)
+                    
         except Exception as e:
             save_log(f"❌ Lỗi khi lưu Excel: {str(e)}", DEBUG_LOG_FILE)
             
@@ -513,18 +537,26 @@ class PivotData:
                 return True
                 
             last_pivot = self.confirmed_pivots[-1]
-            last_pivot_time = datetime.strptime(last_pivot['time'], '%H:%M')
-            new_time = datetime.strptime(new_pivot_time, '%H:%M')
+            
+            # Chuyển đổi chuỗi thời gian thành datetime với đầy đủ thông tin ngày
+            last_pivot_dt = datetime.strptime(f"2025-03-14 {last_pivot['time']}", '%Y-%m-%d %H:%M')
+            new_pivot_dt = datetime.strptime(f"2025-03-15 {new_pivot_time}", '%Y-%m-%d %H:%M')
+            
+            # Nếu new_pivot_time < last_pivot_time, nghĩa là đã qua ngày mới
+            if new_pivot_dt < last_pivot_dt:
+                new_pivot_dt = new_pivot_dt + timedelta(days=1)
             
             # Tính số nến giữa 2 pivot (mỗi nến 30 phút)
-            bars_between = abs((new_time - last_pivot_time).total_seconds() / 1800)
+            bars_between = (new_pivot_dt - last_pivot_dt).total_seconds() / 1800
             
             is_valid = bars_between >= self.MIN_BARS_BETWEEN_PIVOTS
             if not is_valid:
-                save_log(f"⚠️ Bỏ qua pivot do khoảng cách quá gần (cần tối thiểu {self.MIN_BARS_BETWEEN_PIVOTS} nến)", DEBUG_LOG_FILE)
+                save_log(f"⚠️ Bỏ qua pivot tại {new_pivot_time} do khoảng cách quá gần (cần tối thiểu {self.MIN_BARS_BETWEEN_PIVOTS} nến)", DEBUG_LOG_FILE)
+                save_log(f"Range của pivot gần nhất ({last_pivot['type']} tại {last_pivot['time']})", DEBUG_LOG_FILE)
+                save_log(f"Khoảng cách thực tế: {bars_between:.1f} nến", DEBUG_LOG_FILE)
                 
             return is_valid
-            
+                
         except Exception as e:
             save_log(f"❌ Lỗi khi kiểm tra khoảng cách pivot: {str(e)}", DEBUG_LOG_FILE)
             return False
