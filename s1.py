@@ -90,20 +90,30 @@ def set_current_time_and_user(current_time, current_user):
         return False
                 
 class PivotData:
-    def __init__(self):
-        """Khởi tạo với logic TradingView"""
-        # Các thông số cơ bản
-        self.LEFT_BARS = 5        # Số nến so sánh bên trái
-        self.RIGHT_BARS = 5       # Số nến so sánh bên phải
-        self.MIN_BARS_BETWEEN_PIVOTS = 5
-        # Lưu trữ dữ liệu
-        self.price_history = []   # Lịch sử giá
-        self.confirmed_pivots = [] # Các pivot đã xác nhận
-        
-        # Thời gian hiện tại
-        self.current_time = None
-        
-        save_log("🔄 Khởi tạo PivotData với logic TradingView", DEBUG_LOG_FILE)
+    def __init__(self, user="lenhat20791"):
+        """
+        Khởi tạo S1 bot
+        Args:
+            user: Tên người dùng
+        """
+        # Các hằng số
+        self.LEFT_BARS = 5          # Số nến so sánh bên trái
+        self.RIGHT_BARS = 5         # Số nến so sánh bên phải
+        self.MIN_BARS_BETWEEN_PIVOTS = 3  # Khoảng cách tối thiểu giữa các pivot
+
+        # Khởi tạo các biến
+        self.price_history = []     # Lưu toàn bộ lịch sử giá
+        self.pivot_history = []     # Lưu tất cả các pivot points
+        self.confirmed_pivots = []  # Lưu các pivot đã xác nhận
+        self.current_time = None    # Thời gian hiện tại
+        self.user = user           # Tên người dùng
+
+        save_log("=== S1 Bot Initialized ===", DEBUG_LOG_FILE)
+        save_log(f"👤 User: {self.user}", DEBUG_LOG_FILE)
+        save_log(f"⚙️ Settings:", DEBUG_LOG_FILE)
+        save_log(f"  - Left bars: {self.LEFT_BARS}", DEBUG_LOG_FILE)
+        save_log(f"  - Right bars: {self.RIGHT_BARS}", DEBUG_LOG_FILE)
+        save_log(f"  - Min bars between pivots: {self.MIN_BARS_BETWEEN_PIVOTS}", DEBUG_LOG_FILE)
         
     def set_current_time(self, time):
         """Cập nhật current_time"""
@@ -121,15 +131,32 @@ class PivotData:
         save_log("==============================", DEBUG_LOG_FILE)  
         
     def add_price_data(self, data):
+        """
+        Thêm dữ liệu giá mới và phân tích pivot
+        Args:
+            data: Dictionary chứa thông tin nến (time, open, high, low, close)
+        Returns:
+            bool: True nếu thành công, False nếu thất bại
+        """
         try:
-            # Cập nhật thời gian và log
+            # 1. Cập nhật thông tin
             self.current_time = data["time"]
-            save_log(f"\n⏰ Thời điểm: {self.current_time}", DEBUG_LOG_FILE)
+            save_log(f"\n=== Nến Mới ===", DEBUG_LOG_FILE)
+            save_log(f"⏰ Thời điểm: {self.current_time}", DEBUG_LOG_FILE)
             save_log(f"📊 High: ${data['high']:,.2f}, Low: ${data['low']:,.2f}", DEBUG_LOG_FILE)
 
-            # Thêm vào lịch sử giá - không giới hạn số lượng nến
+            # 2. Thêm vào lịch sử
             self.price_history.append(data)
-                
+            save_log(f"📈 Tổng số nến: {len(self.price_history)}", DEBUG_LOG_FILE)
+
+            # 3. Phân tích pivot
+            high_pivot = self.detect_pivot(data["high"], "high")
+            low_pivot = self.detect_pivot(data["low"], "low")
+
+            # 4. Lưu nếu phát hiện pivot mới
+            if high_pivot or low_pivot:
+                self.save_to_excel()
+
             return True
 
         except Exception as e:
@@ -303,25 +330,26 @@ class PivotData:
             save_log(f"❌ Lỗi khi tính số nến giữa hai thời điểm: {str(e)}", DEBUG_LOG_FILE)
             return 0 
     
-    def _add_confirmed_pivot(self, pivot_data):
-        """Thêm một pivot đã xác nhận"""
+    def _add_confirmed_pivot(self, pivot):
+        """
+        Thêm pivot mới vào lịch sử
+        Args:
+            pivot: Dictionary chứa thông tin pivot
+        Returns:
+            bool: True nếu thành công, False nếu thất bại
+        """
         try:
-            # pivot_data phải có các trường bắt buộc
-            if not all(key in pivot_data for key in ['type', 'price', 'time']):
-                save_log("❌ Dữ liệu pivot không hợp lệ", DEBUG_LOG_FILE)
-                return False
-                
-            # Kiểm tra xem pivot đã tồn tại chưa
-            for pivot in self.confirmed_pivots:
-                if pivot['time'] == pivot_data['time'] and pivot['price'] == pivot_data['price']:
-                    save_log("⚠️ Pivot này đã tồn tại", DEBUG_LOG_FILE)
-                    return False
-
-            self.confirmed_pivots.append(pivot_data)
-            save_log(f"✅ Đã thêm pivot: {pivot_data['type']} tại ${pivot_data['price']:,.2f} ({pivot_data['time']})", DEBUG_LOG_FILE)
-            save_log(f"📊 Tổng số confirmed pivots: {len(self.confirmed_pivots)}", DEBUG_LOG_FILE)
-            return True
+            # Thêm vào cả hai danh sách
+            self.pivot_history.append(pivot)
+            self.confirmed_pivots.append(pivot)
             
+            save_log("\n=== Thêm Pivot Mới ===", DEBUG_LOG_FILE)
+            save_log(f"Loại: {pivot['type']}", DEBUG_LOG_FILE)
+            save_log(f"Giá: ${pivot['price']:,.2f}", DEBUG_LOG_FILE)
+            save_log(f"Thời gian: {pivot['time']}", DEBUG_LOG_FILE)
+            
+            return True
+
         except Exception as e:
             save_log(f"❌ Lỗi khi thêm pivot: {str(e)}", DEBUG_LOG_FILE)
             return False
@@ -504,70 +532,57 @@ class PivotData:
             save_log(f"❌ Lỗi khi lấy all pivots: {str(e)}", DEBUG_LOG_FILE)
             return []    
                 
-    def _determine_pivot_type(self, current_price, direction):
+    def _determine_pivot_type(self, price, direction):
         """
-        Xác định loại pivot dựa trên so sánh với pivot tham chiếu
+        Xác định loại pivot dựa trên logic TradingView
         Args:
-            current_price (float): Giá của pivot cần xác định
-            direction (str): 'high' hoặc 'low'
+            price: Giá của pivot hiện tại
+            direction: 'high' hoặc 'low'
         Returns:
-            str: Loại pivot (HH, HL, LH, LL) hoặc None nếu không xác định được
+            str: Loại pivot (HH, LL, HL, LH) hoặc None
         """
         try:
-            save_log("\n=== Phân loại Pivot ===", DEBUG_LOG_FILE)
-            save_log(f"⏰ Thời điểm: {self.current_time}", DEBUG_LOG_FILE)
-            save_log(f"💲 Giá: ${current_price:,.2f}", DEBUG_LOG_FILE)
-            save_log(f"📍 Loại: {direction}", DEBUG_LOG_FILE)
-
-            # 1. Nếu không có pivot nào
-            if not self.confirmed_pivots:
-                pivot_type = "HH" if direction == "high" else "LL"
-                save_log(f"✨ Pivot đầu tiên -> {pivot_type}", DEBUG_LOG_FILE)
-                return pivot_type
-
-            # 2. Tìm pivot tham chiếu phù hợp
-            current_time = datetime.strptime(self.current_time, '%H:%M')
-            reference_pivot = None
+            save_log("\n=== Phân Loại Pivot ===", DEBUG_LOG_FILE)
             
-            for pivot in reversed(self.confirmed_pivots):
-                pivot_time = datetime.strptime(pivot['time'], '%H:%M')
-                
-                # Kiểm tra pivot tham chiếu cho ngày mới
-                if 'is_reference' in pivot and pivot['is_reference']:
-                    reference_pivot = pivot
-                    save_log(f"📅 Sử dụng pivot tham chiếu từ ngày trước: {pivot['time']}", DEBUG_LOG_FILE)
-                    break
-                    
-                # Kiểm tra pivot cùng loại trong ngày
-                if current_time.hour >= pivot_time.hour:  # Cùng ngày
-                    if pivot['direction'] == direction:
-                        reference_pivot = pivot
-                        save_log(f"🔄 Sử dụng pivot cùng loại gần nhất: {pivot['time']}", DEBUG_LOG_FILE)
-                        break
+            # Lấy 4 pivot trước đó
+            [b, c, d, e] = self._find_previous_pivots(direction)
+            a = price  # Pivot hiện tại
+            
+            save_log("Giá các pivot:", DEBUG_LOG_FILE)
+            save_log(f"A (hiện tại): ${a:,.2f}", DEBUG_LOG_FILE)
+            save_log(f"B (trước): ${b:,.2f if b else 0}", DEBUG_LOG_FILE)
+            save_log(f"C: ${c:,.2f if c else 0}", DEBUG_LOG_FILE)
+            save_log(f"D: ${d:,.2f if d else 0}", DEBUG_LOG_FILE)
+            save_log(f"E: ${e:,.2f if e else 0}", DEBUG_LOG_FILE)
 
-            # 3. Nếu không tìm thấy pivot tham chiếu
-            if not reference_pivot:
-                pivot_type = "HH" if direction == "high" else "LL"
-                save_log(f"✨ Pivot đầu tiên của loại {direction} -> {pivot_type}", DEBUG_LOG_FILE)
-                return pivot_type
+            if None in [b, c, d]:
+                save_log("⚠️ Chưa đủ pivot để phân loại", DEBUG_LOG_FILE)
+                return None
 
-            # 4. So sánh với pivot tham chiếu
+            # Logic phân loại từ TradingView
             if direction == "high":
-                is_higher = current_price > reference_pivot['price']
-                pivot_type = "HH" if is_higher else "LH"
-                save_log(f"📊 So sánh High: ${current_price:,.2f} {'>' if is_higher else '<'} ${reference_pivot['price']:,.2f} ({reference_pivot['time']}) -> {pivot_type}", DEBUG_LOG_FILE)
+                if a > b and a > c and c > b and c > d:
+                    save_log("✅ Phát hiện HH", DEBUG_LOG_FILE)
+                    return "HH"
+                elif ((a <= c and (b < c and b < d and d < c and d < e)) or 
+                      (a > b and a < c and b > d)):
+                    save_log("✅ Phát hiện LH", DEBUG_LOG_FILE)
+                    return "LH"
             else:  # direction == "low"
-                is_lower = current_price < reference_pivot['price']
-                pivot_type = "LL" if is_lower else "HL"
-                save_log(f"📊 So sánh Low: ${current_price:,.2f} {'<' if is_lower else '>'} ${reference_pivot['price']:,.2f} ({reference_pivot['time']}) -> {pivot_type}", DEBUG_LOG_FILE)
+                if a < b and a < c and c < b and c < d:
+                    save_log("✅ Phát hiện LL", DEBUG_LOG_FILE)
+                    return "LL"
+                elif ((a >= c and (b > c and b > d and d > c and d > e)) or 
+                      (a < b and a > c and b < d)):
+                    save_log("✅ Phát hiện HL", DEBUG_LOG_FILE)
+                    return "HL"
 
-            save_log(f"✅ Kết luận: {pivot_type}", DEBUG_LOG_FILE)
-            return pivot_type
+            save_log("❌ Không xác định được loại pivot", DEBUG_LOG_FILE)
+            return None
 
         except Exception as e:
-            save_log(f"❌ Lỗi khi xác định loại pivot: {str(e)}", DEBUG_LOG_FILE)
-            save_log(traceback.format_exc(), DEBUG_LOG_FILE)
-            return None 
+            save_log(f"❌ Lỗi khi phân loại pivot: {str(e)}", DEBUG_LOG_FILE)
+            return None
     
     def _is_valid_pivot_spacing(self, new_pivot_time):
         """Kiểm tra khoảng cách giữa pivot mới và pivot gần nhất"""
@@ -599,7 +614,22 @@ class PivotData:
         except Exception as e:
             save_log(f"❌ Lỗi khi kiểm tra khoảng cách pivot: {str(e)}", DEBUG_LOG_FILE)
             return False
-            
+    
+    def _find_previous_pivots(self, direction, count=4):
+        """
+        Tìm 4 pivot points gần nhất cùng hướng
+        Args:
+            direction: 'high' hoặc 'low'
+            count: Số pivot cần tìm
+        Returns:
+            list: Danh sách giá của các pivot
+        """
+        results = []
+        for pivot in reversed(self.pivot_history):
+            if pivot['direction'] == direction and len(results) < count:
+                results.append(pivot['price'])
+        return results + [None] * (count - len(results)) 
+    
 # Create global instance
 pivot_data = PivotData() 
 
