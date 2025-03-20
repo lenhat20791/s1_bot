@@ -121,7 +121,7 @@ class PivotData:
         save_log("==============================", DEBUG_LOG_FILE)  
         
     def add_price_data(self, data):
-        """Thêm dữ liệu giá mới với logic đơn giản hóa"""
+        """Chỉ thêm dữ liệu giá mới"""
         try:
             # Cập nhật thời gian và log
             self.current_time = data["time"]
@@ -135,20 +135,34 @@ class PivotData:
             max_bars = self.LEFT_BARS + self.RIGHT_BARS + 1
             if len(self.price_history) > max_bars:
                 self.price_history = self.price_history[-max_bars:]
-            
-            # Phát hiện pivot
-            high_pivot = self.detect_pivot(data["high"], "high")
-            low_pivot = self.detect_pivot(data["low"], "low")
-
-            if high_pivot or low_pivot:
-                self.save_to_excel()  # Cập nhật Excel khi có pivot mới
-
+                
             return True
 
         except Exception as e:
             save_log(f"❌ Lỗi khi thêm price data: {str(e)}", DEBUG_LOG_FILE)
             return False
-             
+    
+    def process_new_data(self, data):
+        """Xử lý dữ liệu mới và phát hiện pivot"""
+        try:
+            # Thêm dữ liệu
+            if not self.add_price_data(data):
+                return False
+                
+            # Phát hiện pivot
+            high_pivot = self.detect_pivot(data["high"], "high")
+            low_pivot = self.detect_pivot(data["low"], "low")
+
+            # Cập nhật Excel nếu cần
+            if high_pivot or low_pivot:
+                self.save_to_excel()
+
+            return True
+            
+        except Exception as e:
+            save_log(f"❌ Lỗi khi xử lý dữ liệu mới: {str(e)}", DEBUG_LOG_FILE)
+            return False    
+            
     def detect_pivot(self, price, direction):
         """
         Phát hiện pivot với kiểm tra khoảng cách và xử lý qua ngày mới
