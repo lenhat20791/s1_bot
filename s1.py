@@ -104,6 +104,7 @@ class PivotData:
         # Khởi tạo các biến
         self.price_history = []     # Lưu toàn bộ lịch sử giá
         self.pivot_history = []     # Lưu tất cả các pivot points
+        self.potential_pivots = []  # Danh sách pivot tiềm năng chờ xác nhận
         self.confirmed_pivots = []  # Lưu các pivot đã xác nhận
         self.current_time = None    # Thời gian hiện tại
         self.user = user           # Tên người dùng
@@ -129,7 +130,190 @@ class PivotData:
         save_log("✅ Đã xóa price history", DEBUG_LOG_FILE)
         save_log("✅ Đã xóa confirmed pivots", DEBUG_LOG_FILE)
         save_log("==============================", DEBUG_LOG_FILE)  
-        
+    
+    def detect_potential_pivot(self, price, direction, time):
+        """Phát hiện điểm có khả năng là pivot"""
+        try:
+            # Kiểm tra đủ nến bên trái
+            if len(self.price_history) < self.LEFT_BARS:
+                save_log(f"\n⚠️ Chưa đủ nến trái để xét pivot tại {time}", DEBUG_LOG_FILE)
+                save_log(f"- Cần: {self.LEFT_BARS} nến", DEBUG_LOG_FILE)
+                save_log(f"- Hiện có: {len(self.price_history)} nến", DEBUG_LOG_FILE)
+                return None
+
+            # Lấy 5 nến trước
+            left_bars = self.price_history[-self.LEFT_BARS:]
+            
+            # Log phân tích
+            save_log(f"\n=== Xét điểm tiềm năng {time} ===", DEBUG_LOG_FILE)
+            save_log(f"💲 Giá: ${price:,.2f}", DEBUG_LOG_FILE)
+            save_log(f"📊 Loại: {'High' if direction == 'high' else 'Low'}", DEBUG_LOG_FILE)
+            
+            # Kiểm tra với nến trái
+            if direction == "high":
+                is_potential = price > max(bar['high'] for bar in left_bars)
+                if is_potential:
+                    save_log("✅ Cao hơn tất cả high của 5 nến trước", DEBUG_LOG_FILE)
+                else:
+                    save_log("❌ Không cao hơn tất cả high của 5 nến trước", DEBUG_LOG_FILE)
+            else:
+                is_potential = price < min(bar['low'] for bar in left_bars)
+                if is_potential:
+                    save_log("✅ Thấp hơn tất cả low của 5 nến trước", DEBUG_LOG_FILE)
+                else:
+                    save_log("❌ Không thấp hơn tất cả low của 5 nến trước", DEBUG_LOG_FILE)
+
+            if is_potential:
+                potential_pivot = {
+                    'time': time,
+                    'price': price,
+                    'direction': direction,
+                    'confirmed': False,
+                    'right_bars': []  # Sẽ thêm nến phải vào đây
+                }
+                self.potential_pivots.append(potential_pivot)
+                save_log("➡️ Đã thêm vào danh sách chờ xác nhận", DEBUG_LOG_FILE)
+                return potential_pivot
+
+            return None
+
+        except Exception as e:
+            save_log(f"❌ Lỗi khi phát hiện pivot tiềm năng: {str(e)}", DEBUG_LOG_FILE)
+            return None
+    
+    def confirm_pivot(self, potential_pivot):
+        """Xác nhận pivot khi đủ nến phải"""
+        try:
+            # Kiểm tra số nến phải
+            if len(potential_pivot['right_bars']) < self.RIGHT_BARS:
+                save_log(f"\n⏳ Pivot {potential_pivot['time']} đang chờ đủ nến phải:", DEBUG_LOG_FILE)
+                save_log(f"- Cần: {self.RIGHT_BARS} nến", DEBUG_LOG_FILE)
+                save_log(f"- Hiện có: {len(potential_pivot['right_bars'])} nến", DEBUG_LOG_FILE)
+                return False
+
+            # So sánh với nến phải
+            if potential_pivot['direction'] == 'high':
+                is_confirmed = potential_pivot['price'] > max(bar['high'] for bar in potential_pivot['right_bars'])
+                comparison = "cao hơn"
+            else:
+                is_confirmed = potential_pivot['price'] < min(bar['low'] for bar in potential_pivot['right_bars'])
+                comparison = "thấp hơn"
+
+            save_log(f"\n🔍 Xác nhận pivot {potential_pivot['time']}:", DEBUG_LOG_FILE)
+            if is_confirmed:
+                save_log(f"✅ {comparison} tất cả nến phải", DEBUG_LOG_FILE)
+                return True
+            else:
+                save_log(f"❌ Không {comparison} tất cả nến phải", DEBUG_LOG_FILE)
+                return False
+
+        except Exception as e:
+            save_log(f"❌ Lỗi khi xác nhận pivot: {str(e)}", DEBUG_LOG_FILE)
+            return False
+    
+    def process_new_candle(self, candle_data):
+        """
+        Xử lý khi có nến mới
+        - Thêm vào price history
+        - Phát hiện pivot tiềm năng
+        - Cập nhật/xác nhận các pivot đang chờ
+        """
+        try:
+            # 1. Chuyển đổi thời gian UTC sang VN
+            utc_time = datetime.strptime(candle_data['time'], '%H:%M')
+            vn_time = (utc_time + timedelta(hours=7)).strftime('%H:%M')
+            current_utc = datetime.strptime("2025-03-20 10:14:38", "%Y-%m-%d %H:%M:%S")
+            current_vn = (current_utc + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S")
+
+            # 2. Log thông tin nến mới
+            save_log("\n" + "="*50, DEBUG_LOG_FILE)
+            save_log(f"📊 NẾN MỚI - {vn_time} (GMT+7)", DEBUG_LOG_FILE)
+            save_log(f"⏰ Thời gian hiện tại: {current_vn}", DEBUG_LOG_FILE)
+            save_log(f"👤 User: {self.user_login}", DEBUG_LOG_FILE)
+            save_log("-"*30, DEBUG_LOG_FILE)
+            save_log(f"High: ${candle_data['high']:,.2f}", DEBUG_LOG_FILE)
+            save_log(f"Low: ${candle_data['low']:,.2f}", DEBUG_LOG_FILE)
+            save_log(f"Open: ${candle_data['open']:,.2f}", DEBUG_LOG_FILE)
+            save_log(f"Close: ${candle_data['close']:,.2f}", DEBUG_LOG_FILE)
+
+            # 3. Kiểm tra biến động bất thường
+            price_range = candle_data['high'] - candle_data['low']
+            if price_range > 200:  # Ngưỡng 200$
+                save_log(f"⚠️ Biến động lớn: ${price_range:,.2f}", DEBUG_LOG_FILE)
+                save_log(f"Range: ${candle_data['high']:,.2f} - ${candle_data['low']:,.2f}", DEBUG_LOG_FILE)
+
+            # 4. Thêm vào price history
+            self.price_history.append(candle_data)
+            save_log(f"📈 Tổng số nến: {len(self.price_history)}", DEBUG_LOG_FILE)
+
+            # 5. Phát hiện pivot tiềm năng mới
+            save_log("\n🔍 Kiểm tra pivot tiềm năng:", DEBUG_LOG_FILE)
+            
+            # Kiểm tra High
+            potential_high = self.detect_potential_pivot(
+                price=candle_data['high'],
+                direction='high',
+                time=vn_time
+            )
+            if potential_high:
+                save_log(f"✅ Phát hiện High tiềm năng: ${potential_high['price']:,.2f}", DEBUG_LOG_FILE)
+            
+            # Kiểm tra Low
+            potential_low = self.detect_potential_pivot(
+                price=candle_data['low'],
+                direction='low',
+                time=vn_time
+            )
+            if potential_low:
+                save_log(f"✅ Phát hiện Low tiềm năng: ${potential_low['price']:,.2f}", DEBUG_LOG_FILE)
+
+            # 6. Cập nhật các pivot đang chờ xác nhận
+            if self.potential_pivots:
+                save_log("\n📝 Cập nhật pivot đang chờ:", DEBUG_LOG_FILE)
+                save_log(f"Số pivot chờ xác nhận: {len(self.potential_pivots)}", DEBUG_LOG_FILE)
+                
+                for pivot in self.potential_pivots[:]:  # Dùng slice để tránh lỗi khi xóa
+                    if not pivot['confirmed']:
+                        # Thêm nến mới vào right_bars
+                        pivot['right_bars'].append(candle_data)
+                        
+                        # Log thông tin
+                        utc_pivot_time = datetime.strptime(pivot['time'], '%H:%M')
+                        vn_pivot_time = (utc_pivot_time + timedelta(hours=7)).strftime('%H:%M')
+                        save_log(f"\nKiểm tra pivot {vn_pivot_time}:", DEBUG_LOG_FILE)
+                        save_log(f"- Giá: ${pivot['price']:,.2f}", DEBUG_LOG_FILE)
+                        save_log(f"- Loại: {pivot['direction'].upper()}", DEBUG_LOG_FILE)
+                        save_log(f"- Số nến phải: {len(pivot['right_bars'])}/{self.RIGHT_BARS}", DEBUG_LOG_FILE)
+
+                        # Kiểm tra xác nhận nếu đủ nến
+                        if len(pivot['right_bars']) >= self.RIGHT_BARS:
+                            if self.confirm_pivot(pivot):
+                                pivot['confirmed'] = True
+                                # Phân loại pivot
+                                pivot_type = self.classify_pivot(pivot)
+                                if pivot_type:
+                                    self.add_confirmed_pivot(pivot, pivot_type)
+                                    save_log(f"✅ Xác nhận thành công: {pivot_type}", DEBUG_LOG_FILE)
+                                else:
+                                    save_log("❌ Không xác định được loại pivot", DEBUG_LOG_FILE)
+                            else:
+                                save_log("❌ Không thỏa điều kiện pivot", DEBUG_LOG_FILE)
+                                self.potential_pivots.remove(pivot)
+                        else:
+                            save_log("⏳ Chờ thêm nến phải", DEBUG_LOG_FILE)
+
+            # 7. Log tổng kết
+            save_log("\n📊 TỔNG KẾT:", DEBUG_LOG_FILE)
+            save_log(f"- Tổng số nến: {len(self.price_history)}", DEBUG_LOG_FILE)
+            save_log(f"- Pivot tiềm năng: {len(self.potential_pivots)}", DEBUG_LOG_FILE)
+            save_log(f"- Pivot đã xác nhận: {len(self.confirmed_pivots)}", DEBUG_LOG_FILE)
+            save_log("="*50 + "\n", DEBUG_LOG_FILE)
+
+        except Exception as e:
+            save_log(f"\n❌ LỖI XỬ LÝ NẾN MỚI:", DEBUG_LOG_FILE)
+            save_log(f"- Chi tiết: {str(e)}", DEBUG_LOG_FILE)
+            save_log(f"- Trace: {traceback.format_exc()}", DEBUG_LOG_FILE)
+    
     def add_price_data(self, data):
         """
         Thêm dữ liệu giá mới và phân tích pivot
@@ -191,33 +375,102 @@ class PivotData:
         try:
             # 1. Kiểm tra đủ số nến
             if len(self.price_history) < (self.LEFT_BARS + self.RIGHT_BARS + 1):
+                save_log(f"\n⚠️ Chưa đủ nến để xác định pivot", DEBUG_LOG_FILE)
+                save_log(f"- Cần: {self.LEFT_BARS + self.RIGHT_BARS + 1} nến", DEBUG_LOG_FILE)
+                save_log(f"- Hiện có: {len(self.price_history)} nến", DEBUG_LOG_FILE)
                 return None
 
             # 2. Lấy window hiện tại (11 nến)
             window = self.price_history[-(self.LEFT_BARS + self.RIGHT_BARS + 1):]
             center_idx = self.LEFT_BARS
             center_candle = window[center_idx]
+            
+            # Chuyển đổi thời gian center candle sang giờ VN
+            utc_time = datetime.strptime(center_candle['time'], '%H:%M')
+            vn_time = (utc_time + timedelta(hours=7)).strftime('%H:%M')
 
-            # 3. Log ngắn gọn chỉ khi phát hiện pivot
-            is_logging = False
+            # 3. Log chi tiết quá trình so sánh
+            save_log(f"\n=== Phân tích Pivot {vn_time} (GMT+7) ===", DEBUG_LOG_FILE)
+            save_log(f"💲 Giá kiểm tra: ${price:,.2f}", DEBUG_LOG_FILE)
+            save_log(f"📊 Loại: {'High' if direction == 'high' else 'Low'}", DEBUG_LOG_FILE)
 
-            # 4. Kiểm tra pivot như TradingView
+            # 4. Log chi tiết 5 nến trước
+            save_log("\n🔍 5 nến trước center:", DEBUG_LOG_FILE)
+            for i, bar in enumerate(window[:center_idx]):
+                if direction == "high":
+                    save_log(f"Nến {bar['time']}: High=${bar['high']:,.2f}", DEBUG_LOG_FILE)
+                else:
+                    save_log(f"Nến {bar['time']}: Low=${bar['low']:,.2f}", DEBUG_LOG_FILE)
+
+            # 5. Log nến center
+            save_log(f"\n🎯 Nến center ({center_candle['time']}):", DEBUG_LOG_FILE)
             if direction == "high":
-                # So sánh với max của 5 nến trước và 5 nến sau
-                is_pivot = price > max(bar['high'] for bar in window[:center_idx]) and \
-                          price > max(bar['high'] for bar in window[center_idx + 1:])
+                save_log(f"High=${center_candle['high']:,.2f}", DEBUG_LOG_FILE)
             else:
-                # So sánh với min của 5 nến trước và 5 nến sau  
-                is_pivot = price < min(bar['low'] for bar in window[:center_idx]) and \
-                          price < min(bar['low'] for bar in window[center_idx + 1:])
+                save_log(f"Low=${center_candle['low']:,.2f}", DEBUG_LOG_FILE)
 
+            # 6. Log chi tiết 5 nến sau
+            save_log("\n🔍 5 nến sau center:", DEBUG_LOG_FILE)
+            for i, bar in enumerate(window[center_idx + 1:]):
+                if direction == "high":
+                    save_log(f"Nến {bar['time']}: High=${bar['high']:,.2f}", DEBUG_LOG_FILE)
+                else:
+                    save_log(f"Nến {bar['time']}: Low=${bar['low']:,.2f}", DEBUG_LOG_FILE)
+
+            # 7. Kiểm tra điều kiện pivot
+            if direction == "high":
+                max_left = max(bar['high'] for bar in window[:center_idx])
+                max_right = max(bar['high'] for bar in window[center_idx + 1:])
+                
+                save_log(f"\n📈 So sánh High:", DEBUG_LOG_FILE)
+                save_log(f"- Max 5 nến trước: ${max_left:,.2f}", DEBUG_LOG_FILE)
+                save_log(f"- Giá center: ${price:,.2f}", DEBUG_LOG_FILE)
+                save_log(f"- Max 5 nến sau: ${max_right:,.2f}", DEBUG_LOG_FILE)
+                
+                is_pivot = price > max_left and price > max_right
+                
+                if is_pivot:
+                    save_log("✅ Thỏa mãn điều kiện High Pivot:", DEBUG_LOG_FILE)
+                    save_log(f"- ${price:,.2f} > ${max_left:,.2f} (trước)", DEBUG_LOG_FILE)
+                    save_log(f"- ${price:,.2f} > ${max_right:,.2f} (sau)", DEBUG_LOG_FILE)
+                else:
+                    save_log("❌ Không thỏa mãn điều kiện High Pivot:", DEBUG_LOG_FILE)
+                    if price <= max_left:
+                        save_log(f"- ${price:,.2f} <= ${max_left:,.2f} (trước)", DEBUG_LOG_FILE)
+                    if price <= max_right:
+                        save_log(f"- ${price:,.2f} <= ${max_right:,.2f} (sau)", DEBUG_LOG_FILE)
+
+            else:  # direction == "low"
+                min_left = min(bar['low'] for bar in window[:center_idx])
+                min_right = min(bar['low'] for bar in window[center_idx + 1:])
+                
+                save_log(f"\n📉 So sánh Low:", DEBUG_LOG_FILE)
+                save_log(f"- Min 5 nến trước: ${min_left:,.2f}", DEBUG_LOG_FILE)
+                save_log(f"- Giá center: ${price:,.2f}", DEBUG_LOG_FILE)
+                save_log(f"- Min 5 nến sau: ${min_right:,.2f}", DEBUG_LOG_FILE)
+                
+                is_pivot = price < min_left and price < min_right
+                
+                if is_pivot:
+                    save_log("✅ Thỏa mãn điều kiện Low Pivot:", DEBUG_LOG_FILE)
+                    save_log(f"- ${price:,.2f} < ${min_left:,.2f} (trước)", DEBUG_LOG_FILE)
+                    save_log(f"- ${price:,.2f} < ${min_right:,.2f} (sau)", DEBUG_LOG_FILE)
+                else:
+                    save_log("❌ Không thỏa mãn điều kiện Low Pivot:", DEBUG_LOG_FILE)
+                    if price >= min_left:
+                        save_log(f"- ${price:,.2f} >= ${min_left:,.2f} (trước)", DEBUG_LOG_FILE)
+                    if price >= min_right:
+                        save_log(f"- ${price:,.2f} >= ${min_right:,.2f} (sau)", DEBUG_LOG_FILE)
+
+            # 8. Kết luận
             if not is_pivot:
+                save_log("\n❌ Kết luận: Không phải pivot", DEBUG_LOG_FILE)
                 return None
 
-            # 5. Nếu là pivot, phân loại và log
+            # 9. Nếu là pivot, phân loại và log
             pivot_type = self._determine_pivot_type(price, direction)
             if pivot_type:
-                save_log(f"\n=== Phát Hiện Pivot {pivot_type} ===", DEBUG_LOG_FILE)
+                save_log(f"\n✅ Kết luận: Phát hiện {pivot_type}", DEBUG_LOG_FILE)
                 save_log(f"⏰ Thời điểm: {center_candle['time']}", DEBUG_LOG_FILE)
                 save_log(f"💲 Giá: ${price:,.2f}", DEBUG_LOG_FILE)
                 
@@ -226,7 +479,7 @@ class PivotData:
                     'price': float(price),
                     'time': center_candle['time'],
                     'direction': direction,
-                    'created_at': datetime.strptime("2025-03-20 08:58:23", "%Y-%m-%d %H:%M:%S").strftime('%Y-%m-%d %H:%M:%S')
+                    'created_at': datetime.strptime("2025-03-20 09:43:35", "%Y-%m-%d %H:%M:%S").strftime('%Y-%m-%d %H:%M:%S')
                 }
 
                 if self._add_confirmed_pivot(new_pivot):
@@ -235,7 +488,8 @@ class PivotData:
             return None
 
         except Exception as e:
-            save_log(f"❌ Lỗi: {str(e)}", DEBUG_LOG_FILE)
+            save_log(f"❌ Lỗi khi phát hiện pivot: {str(e)}", DEBUG_LOG_FILE)
+            save_log(traceback.format_exc(), DEBUG_LOG_FILE)
             return None
 
     def _calculate_bars_between(self, time1, time2):
