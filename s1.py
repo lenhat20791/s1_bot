@@ -238,23 +238,23 @@ class PivotData:
             save_log(f"❌ Lỗi khi phát hiện pivot: {str(e)}", DEBUG_LOG_FILE)
             return None
 
-def _calculate_bars_between(self, time1, time2):
-    """Tính số nến giữa hai thời điểm, xử lý cả trường hợp qua ngày"""
-    try:
-        if time2.hour < time1.hour:
-            # Qua ngày mới
-            minutes_to_midnight = (24 * 60) - (time1.hour * 60 + time1.minute)
-            minutes_from_midnight = time2.hour * 60 + time2.minute
-            total_minutes = minutes_to_midnight + minutes_from_midnight
-        else:
-            # Cùng ngày
-            total_minutes = (time2.hour * 60 + time2.minute) - (time1.hour * 60 + time1.minute)
-        
-        return total_minutes / 30
+    def _calculate_bars_between(self, time1, time2):
+        """Tính số nến giữa hai thời điểm, xử lý cả trường hợp qua ngày"""
+        try:
+            if time2.hour < time1.hour:
+                # Qua ngày mới
+                minutes_to_midnight = (24 * 60) - (time1.hour * 60 + time1.minute)
+                minutes_from_midnight = time2.hour * 60 + time2.minute
+                total_minutes = minutes_to_midnight + minutes_from_midnight
+            else:
+                # Cùng ngày
+                total_minutes = (time2.hour * 60 + time2.minute) - (time1.hour * 60 + time1.minute)
+            
+            return total_minutes / 30
 
-    except Exception as e:
-        save_log(f"❌ Lỗi khi tính số nến giữa hai thời điểm: {str(e)}", DEBUG_LOG_FILE)
-        return 0 
+        except Exception as e:
+            save_log(f"❌ Lỗi khi tính số nến giữa hai thời điểm: {str(e)}", DEBUG_LOG_FILE)
+            return 0 
     
  
     def _add_confirmed_pivot(self, pivot_data):
