@@ -326,12 +326,20 @@ class PivotData:
                 save_log("Không có dữ liệu pivot để lưu", DEBUG_LOG_FILE)
                 return
 
+            # Chỉ lấy những pivot đã được phân loại hợp lệ
+            valid_pivot_types = ['HH', 'HL', 'LH', 'LL']
+            valid_pivots = [pivot for pivot in self.confirmed_pivots 
+                           if pivot['type'] in valid_pivot_types]
+
+            if not valid_pivots:
+                save_log("Không có pivot hợp lệ để lưu vào Excel", DEBUG_LOG_FILE)
+                return
+
             # Đơn giản hóa dữ liệu chính
             main_data = []
-            for pivot in self.confirmed_pivots:
+            for i, pivot in enumerate(valid_pivots):
                 # Tính % thay đổi so với pivot trước
-                prev_pivot = next((p for p in self.confirmed_pivots 
-                                 if p['time'] < pivot['time']), None)
+                prev_pivot = valid_pivots[i-1] if i > 0 else None
                 price_change = ((pivot['price'] - prev_pivot['price'])/prev_pivot['price'] * 100) if prev_pivot else 0
                 
                 main_data.append({
@@ -375,20 +383,52 @@ class PivotData:
 
                 # Thêm biểu đồ
                 chart = workbook.add_chart({'type': 'line'})
-                chart.add_series({
-                    'name': 'Price',
-                    'categories': f'=Pivot Analysis!$A$2:$A${len(df_main) + 1}',
-                    'values': f'=Pivot Analysis!$C$2:$C${len(df_main) + 1}',
-                    'marker': {'type': 'circle'},
-                    'data_labels': {'value': True, 'num_format': '$#,##0.00'}
-                })
+                
+                # Thêm series cho từng loại pivot
+                for pivot_type in valid_pivot_types:
+                    # Tạo công thức có điều kiện để chỉ lấy giá của pivot type tương ứng
+                    row_count = len(df_main) + 1
+                    category_formula = f'=IF(Pivot Analysis!$B$2:$B${row_count}="{pivot_type}",Pivot Analysis!$A$2:$A${row_count},NA())'
+                    value_formula = f'=IF(Pivot Analysis!$B$2:$B${row_count}="{pivot_type}",Pivot Analysis!$C$2:$C${row_count},NA())'
+                    
+                    # Định dạng cho từng loại pivot
+                    marker_colors = {
+                        'HH': {'color': 'green', 'type': 'circle'},
+                        'LL': {'color': 'red', 'type': 'circle'},
+                        'HL': {'color': 'orange', 'type': 'square'},
+                        'LH': {'color': 'blue', 'type': 'square'}
+                    }
+                    
+                    # Thêm series vào biểu đồ
+                    chart.add_series({
+                        'name': pivot_type,
+                        'categories': category_formula,
+                        'values': value_formula,
+                        'marker': {
+                            'type': marker_colors[pivot_type]['type'],
+                            'size': 8,
+                            'color': marker_colors[pivot_type]['color']
+                        },
+                        'line': {'color': marker_colors[pivot_type]['color']},
+                        'data_labels': {'value': True, 'num_format': '$#,##0.00'}
+                    })
                 
                 # Định dạng biểu đồ
                 chart.set_title({'name': 'Pivot Points Analysis'})
                 chart.set_size({'width': 720, 'height': 400})
+                chart.set_legend({'position': 'bottom'})
+                
+                # Thêm biểu đồ vào worksheet
                 worksheet.insert_chart('G2', chart)
 
-            save_log(f"✅ Đã lưu {len(self.confirmed_pivots)} pivot vào Excel", DEBUG_LOG_FILE)
+            # Log thông tin về số lượng pivot theo từng loại
+            pivot_counts = []
+            for pivot_type in valid_pivot_types:
+                count = len([p for p in valid_pivots if p["type"] == pivot_type])
+                pivot_counts.append(f"{pivot_type}: {count}")
+            
+            save_log(f"✅ Đã lưu {len(valid_pivots)} pivot hợp lệ vào Excel", DEBUG_LOG_FILE)
+            save_log(f"📊 Phân loại: {', '.join(pivot_counts)}", DEBUG_LOG_FILE)
                 
         except Exception as e:
             save_log(f"❌ Lỗi khi lưu Excel: {str(e)}", DEBUG_LOG_FILE)
@@ -423,45 +463,44 @@ class PivotData:
             return []    
                 
     def _determine_pivot_type(self, current_price, direction):
-        """Xác định loại pivot dựa trên logic TV"""
+        """Xác định loại pivot dựa trên việc so sánh với pivot cùng loại gần nhất"""
         try:
-            # Lấy pivot gần nhất cùng loại (high/low)
-            recent_pivots = self.get_recent_pivots(3)  # Chỉ cần 3 pivot gần nhất
-            if not recent_pivots:
-                # Pivot đầu tiên
-                pivot_type = "HH" if direction == "high" else "LL"
-                # Tạo pivot với direction
-                return {
-                    "type": pivot_type,
-                    "price": float(current_price),
-                    "time": self.current_time,
-                    "direction": direction
-                }
+            save_log("\n=== Phân loại Pivot ===", DEBUG_LOG_FILE)
+            save_log(f"⏰ Thời điểm: {self.current_time}", DEBUG_LOG_FILE)
+            save_log(f"💲 Giá: ${current_price:,.2f}", DEBUG_LOG_FILE)
+            save_log(f"📍 Loại: {direction}", DEBUG_LOG_FILE)
 
-            last_pivot = None
-            for pivot in recent_pivots:
-                # Tìm pivot cùng loại gần nhất
-                if (direction == "high" and pivot['type'] in ['HH', 'LH']) or \
-                   (direction == "low" and pivot['type'] in ['LL', 'HL']):
-                    last_pivot = pivot
+            # Nếu không có pivot nào
+            if not self.confirmed_pivots:
+                pivot_type = "HH" if direction == "high" else "LL"
+                save_log(f"✨ Pivot đầu tiên -> {pivot_type}", DEBUG_LOG_FILE)
+                return pivot_type
+
+            # Tìm pivot gần nhất cùng loại (high/low)
+            same_direction_pivot = None
+            for pivot in reversed(self.confirmed_pivots):  # Duyệt từ mới đến cũ
+                if pivot['direction'] == direction:
+                    same_direction_pivot = pivot
                     break
 
-            if not last_pivot:
+            # Nếu không tìm thấy pivot cùng loại
+            if not same_direction_pivot:
                 pivot_type = "HH" if direction == "high" else "LL"
-            else:
-                # Logic phân loại đơn giản theo TV
-                if direction == "high":
-                    pivot_type = "HH" if current_price > last_pivot['price'] else "LH"
-                else:
-                    pivot_type = "LL" if current_price < last_pivot['price'] else "HL"
+                save_log(f"✨ Pivot đầu tiên của loại {direction} -> {pivot_type}", DEBUG_LOG_FILE)
+                return pivot_type
 
-            # Trả về pivot với direction
-            return {
-                "type": pivot_type,
-                "price": float(current_price),
-                "time": self.current_time,
-                "direction": direction
-            }
+            # So sánh với pivot cùng loại gần nhất
+            if direction == "high":
+                is_higher = current_price > same_direction_pivot['price']
+                pivot_type = "HH" if is_higher else "LH"
+                save_log(f"📊 So sánh High: ${current_price:,.2f} {'>' if is_higher else '<'} ${same_direction_pivot['price']:,.2f} ({same_direction_pivot['time']}) -> {pivot_type}", DEBUG_LOG_FILE)
+            else:  # direction == "low"
+                is_lower = current_price < same_direction_pivot['price']
+                pivot_type = "LL" if is_lower else "HL"
+                save_log(f"📊 So sánh Low: ${current_price:,.2f} {'<' if is_lower else '>'} ${same_direction_pivot['price']:,.2f} ({same_direction_pivot['time']}) -> {pivot_type}", DEBUG_LOG_FILE)
+
+            save_log(f"✅ Kết luận: {pivot_type}", DEBUG_LOG_FILE)
+            return pivot_type
 
         except Exception as e:
             save_log(f"❌ Lỗi khi xác định loại pivot: {str(e)}", DEBUG_LOG_FILE)
