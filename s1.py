@@ -194,7 +194,22 @@ class PivotData:
             center_candle = window[center_idx]
             center_time = center_candle['time']
             
-            # 3. So sánh giá với các nến trái và phải
+            # Chuyển đổi center_time từ UTC sang Vietnam time
+            # Lấy ngày hiện tại từ UTC
+            current_date = datetime.strptime("2025-03-21 04:20:30", '%Y-%m-%d %H:%M:%S').date()
+            # Tạo datetime object từ center_time
+            utc_dt = datetime.strptime(f"{current_date} {center_time}", '%Y-%m-%d %H:%M')
+            # Chuyển sang Vietnam time
+            vn_dt = utc_dt + timedelta(hours=7)
+            # Format thời gian Việt Nam
+            vn_time = vn_dt.strftime('%H:%M %d/%m/%Y')
+            
+            # 3. Kiểm tra khoảng cách tối thiểu
+            if not self._is_valid_pivot_spacing(center_time):
+                save_log(f"❌ Bỏ qua pivot do không đủ khoảng cách tối thiểu {self.MIN_BARS_BETWEEN_PIVOTS} nến", DEBUG_LOG_FILE)
+                return None
+            
+            # 4. So sánh giá với các nến trái và phải
             if direction == "high":
                 # So sánh với các nến bên trái
                 left_prices = [bar['high'] for bar in window[:center_idx]]
@@ -221,25 +236,23 @@ class PivotData:
                 # Điều kiện pivot low: thấp hơn TẤT CẢ các nến bên trái và bên phải
                 is_pivot = price < min(left_prices) and price < min(right_prices)
             
-            # 4. Nếu không phải pivot, trả về None
+            # 5. Nếu không phải pivot, trả về None
             if not is_pivot:
                 save_log(f"❌ Không phải điểm pivot {direction}", DEBUG_LOG_FILE)
                 return None
             
-            save_log(f"✅ Là điểm pivot {direction} tại {center_time}", DEBUG_LOG_FILE)
-            # Kiểm tra khoảng cách tối thiểu
-            if not self._is_valid_pivot_spacing(center_time):
-                save_log(f"❌ Bỏ qua pivot do không đủ khoảng cách tối thiểu {self.MIN_BARS_BETWEEN_PIVOTS} nến", DEBUG_LOG_FILE)
-                return None
-            # 5. Nếu là pivot, tạo đối tượng pivot mới
+            save_log(f"✅ Là điểm pivot {direction} tại {vn_time}", DEBUG_LOG_FILE)
+                            
+            # 6. Nếu là pivot, tạo đối tượng pivot mới
             new_pivot = {
                 'price': float(price),
                 'time': center_time,
+                'time_vn': vn_time,  # Thêm Vietnam time
                 'direction': direction,
                 'confirmed': True
             }
             
-            # 6. Phân loại pivot
+            # 7. Phân loại pivot
             pivot_type = self._determine_pivot_type(price, direction)
             if pivot_type:
                 new_pivot['type'] = pivot_type
