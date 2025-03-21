@@ -314,37 +314,48 @@ class PivotData:
     # Trong s1.py - Thay đổi phương thức _add_confirmed_pivot
     def _add_confirmed_pivot(self, pivot):
         """
-        Thêm pivot mới vào lịch sử. Kiểm tra khoảng cách với tất cả pivot khác.
+        Thêm pivot mới vào lịch sử
+        Args:
+            pivot: Dictionary chứa thông tin pivot
+        Returns:
+            bool: True nếu thành công, False nếu thất bại
         """
         try:
             # Kiểm tra khoảng cách với tất cả pivot đã có
-            for existing_pivot in self.confirmed_pivots:
-                pivot_time_obj = datetime.strptime(pivot['time'], '%H:%M')
-                existing_time_obj = datetime.strptime(existing_pivot['time'], '%H:%M')
-                
-                # Tính khoảng cách theo phút
-                time_diff_minutes = abs((pivot_time_obj.hour - existing_time_obj.hour) * 60 + 
-                                        pivot_time_obj.minute - existing_time_obj.minute)
-                
-                # Khoảng cách theo số nến (mỗi nến 30 phút)
-                bars_between = time_diff_minutes / 30
-                
-                # Xử lý trường hợp qua ngày
-                if bars_between > 22:
-                    bars_between = 48 - (time_diff_minutes / 30)
+            if not pivot.get('skip_spacing_check', False):
+                for existing_pivot in self.confirmed_pivots:
+                    pivot_time_obj = datetime.strptime(pivot['time'], '%H:%M')
+                    existing_time_obj = datetime.strptime(existing_pivot['time'], '%H:%M')
                     
-                if bars_between < self.MIN_BARS_BETWEEN_PIVOTS:
-                    save_log(f"⚠️ Bỏ qua pivot {pivot.get('type', 'unknown')} tại {pivot['time']} do gần với {existing_pivot.get('type', 'unknown')} ({existing_pivot['time']})", DEBUG_LOG_FILE)
-                    save_log(f"Khoảng cách: {bars_between:.1f} nến (tối thiểu {self.MIN_BARS_BETWEEN_PIVOTS})", DEBUG_LOG_FILE)
-                    return False
+                    # Tính khoảng cách theo phút
+                    time_diff_minutes = abs((pivot_time_obj.hour - existing_time_obj.hour) * 60 + 
+                                          pivot_time_obj.minute - existing_time_obj.minute)
+                    
+                    # Khoảng cách theo số nến (mỗi nến 30 phút)
+                    bars_between = time_diff_minutes / 30
+                    
+                    # Xử lý trường hợp qua ngày
+                    if bars_between > 22:
+                        bars_between = 48 - (time_diff_minutes / 30)
+                        
+                    if bars_between < self.MIN_BARS_BETWEEN_PIVOTS:
+                        save_log(f"⚠️ Bỏ qua pivot {pivot.get('type', 'unknown')} tại {pivot['time']} do gần với {existing_pivot.get('type', 'unknown')} ({existing_pivot['time']})", DEBUG_LOG_FILE)
+                        save_log(f"Khoảng cách: {bars_between:.1f} nến (tối thiểu {self.MIN_BARS_BETWEEN_PIVOTS})", DEBUG_LOG_FILE)
+                        return False
             
             # Nếu đạt điều kiện khoảng cách, thêm pivot vào danh sách
             self.confirmed_pivots.append(pivot)
             
+            # Chuyển đổi thời gian UTC sang VN
+            current_date = datetime.now(pytz.UTC).date()
+            utc_dt = datetime.strptime(f"{current_date} {pivot['time']}", '%Y-%m-%d %H:%M')
+            vn_dt = utc_dt + timedelta(hours=7)
+            vn_time = vn_dt.strftime('%H:%M %d/%m/%Y')
+            
             save_log("\n=== Thêm Pivot Mới ===", DEBUG_LOG_FILE)
             save_log(f"Loại: {pivot.get('type', 'unknown')}", DEBUG_LOG_FILE)
             save_log(f"Giá: ${pivot['price']:,.2f}", DEBUG_LOG_FILE)
-            save_log(f"Thời gian: {pivot['time']}", DEBUG_LOG_FILE)
+            save_log(f"Thời gian: {vn_time}", DEBUG_LOG_FILE)
             
             return True
 
