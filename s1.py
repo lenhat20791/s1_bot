@@ -103,8 +103,6 @@ class PivotData:
 
         # Khởi tạo các biến
         self.price_history = []     # Lưu toàn bộ lịch sử giá
-        self.pivot_history = []     # Lưu tất cả các pivot points
-        self.potential_pivots = []  # Danh sách pivot tiềm năng chờ xác nhận
         self.confirmed_pivots = []  # Lưu các pivot đã xác nhận
         self.current_time = None    # Thời gian hiện tại
         self.user = user           # Tên người dùng
@@ -130,40 +128,7 @@ class PivotData:
         save_log("✅ Đã xóa price history", DEBUG_LOG_FILE)
         save_log("✅ Đã xóa confirmed pivots", DEBUG_LOG_FILE)
         save_log("==============================", DEBUG_LOG_FILE)  
-            
-    def add_price_data(self, data):
-        """
-        Thêm dữ liệu giá mới và phân tích pivot
-        Args:
-            data: Dictionary chứa thông tin nến (time, open, high, low, close)
-        Returns:
-            bool: True nếu thành công, False nếu thất bại
-        """
-        try:
-            # 1. Cập nhật thông tin
-            self.current_time = data["time"]
-            save_log(f"\n=== Nến Mới ===", DEBUG_LOG_FILE)
-            save_log(f"⏰ Thời điểm: {self.current_time}", DEBUG_LOG_FILE)
-            save_log(f"📊 High: ${data['high']:,.2f}, Low: ${data['low']:,.2f}", DEBUG_LOG_FILE)
-
-            # 2. Thêm vào lịch sử
-            self.price_history.append(data)
-            save_log(f"📈 Tổng số nến: {len(self.price_history)}", DEBUG_LOG_FILE)
-
-            # 3. Phân tích pivot
-            high_pivot = self.detect_pivot(data["high"], "high")
-            low_pivot = self.detect_pivot(data["low"], "low")
-
-            # 4. Lưu nếu phát hiện pivot mới
-            if high_pivot or low_pivot:
-                self.save_to_excel()
-
-            return True
-
-        except Exception as e:
-            save_log(f"❌ Lỗi khi thêm price data: {str(e)}", DEBUG_LOG_FILE)
-            return False
-    
+             
     def process_new_data(self, data):
         """
         Xử lý khi có dữ liệu mới - hàm duy nhất để xử lý nến mới
@@ -300,8 +265,7 @@ class PivotData:
             bool: True nếu thành công, False nếu thất bại
         """
         try:
-            # Thêm vào cả hai danh sách
-            self.pivot_history.append(pivot)
+            # Chỉ thêm vào confirmed_pivots
             self.confirmed_pivots.append(pivot)
             
             save_log("\n=== Thêm Pivot Mới ===", DEBUG_LOG_FILE)
@@ -347,7 +311,7 @@ class PivotData:
             save_log(f"📊 Tổng số pivot: {len(self.confirmed_pivots)}", DEBUG_LOG_FILE)
 
             # Chuẩn bị dữ liệu
-            current_date = datetime.strptime("2025-03-20", "%Y-%m-%d")  # Ngày hiện tại
+            current_date = datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))
             excel_data = []
             
             for pivot in self.confirmed_pivots:
@@ -541,7 +505,8 @@ class PivotData:
             list: Danh sách giá của các pivot
         """
         results = []
-        for pivot in reversed(self.pivot_history):
+        # Thay thế pivot_history bằng confirmed_pivots
+        for pivot in reversed(self.confirmed_pivots):
             if pivot['direction'] == direction and len(results) < count:
                 results.append(pivot['price'])
         return results + [None] * (count - len(results)) 
