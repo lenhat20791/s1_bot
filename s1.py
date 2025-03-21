@@ -99,7 +99,7 @@ class PivotData:
         # Các hằng số
         self.LEFT_BARS = 5          # Số nến so sánh bên trái
         self.RIGHT_BARS = 5         # Số nến so sánh bên phải
-        self.MIN_BARS_BETWEEN_PIVOTS = 3  # Khoảng cách tối thiểu giữa các pivot
+        self.MIN_BARS_BETWEEN_PIVOTS = 4  # Khoảng cách tối thiểu giữa các pivot
 
         # Khởi tạo các biến
         self.price_history = []     # Lưu toàn bộ lịch sử giá
@@ -227,7 +227,10 @@ class PivotData:
                 return None
             
             save_log(f"✅ Là điểm pivot {direction} tại {center_time}", DEBUG_LOG_FILE)
-            
+            # Kiểm tra khoảng cách tối thiểu
+            if not self._is_valid_pivot_spacing(center_time):
+                save_log(f"❌ Bỏ qua pivot do không đủ khoảng cách tối thiểu {self.MIN_BARS_BETWEEN_PIVOTS} nến", DEBUG_LOG_FILE)
+                return None
             # 5. Nếu là pivot, tạo đối tượng pivot mới
             new_pivot = {
                 'price': float(price),
