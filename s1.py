@@ -311,28 +311,40 @@ class PivotData:
             save_log(f"❌ Lỗi khi tính số nến giữa hai thời điểm: {str(e)}", DEBUG_LOG_FILE)
             return 0 
     
+    # Trong s1.py - Thay đổi phương thức _add_confirmed_pivot
     def _add_confirmed_pivot(self, pivot):
         """
-        Thêm pivot mới vào lịch sử
-        Args:
-            pivot: Dictionary chứa thông tin pivot
-        Returns:
-            bool: True nếu thành công, False nếu thất bại
+        Thêm pivot mới vào lịch sử. Kiểm tra khoảng cách với tất cả pivot khác.
         """
         try:
-            # Chuyển đổi thời gian UTC sang VN
-            current_date = datetime.now(pytz.UTC).date()
-            utc_dt = datetime.strptime(f"{current_date} {pivot['time']}", '%Y-%m-%d %H:%M')
-            vn_dt = utc_dt + timedelta(hours=7)
-            vn_time = vn_dt.strftime('%H:%M %d/%m/%Y')
+            # Kiểm tra khoảng cách với tất cả pivot đã có
+            for existing_pivot in self.confirmed_pivots:
+                pivot_time_obj = datetime.strptime(pivot['time'], '%H:%M')
+                existing_time_obj = datetime.strptime(existing_pivot['time'], '%H:%M')
+                
+                # Tính khoảng cách theo phút
+                time_diff_minutes = abs((pivot_time_obj.hour - existing_time_obj.hour) * 60 + 
+                                        pivot_time_obj.minute - existing_time_obj.minute)
+                
+                # Khoảng cách theo số nến (mỗi nến 30 phút)
+                bars_between = time_diff_minutes / 30
+                
+                # Xử lý trường hợp qua ngày
+                if bars_between > 22:
+                    bars_between = 48 - (time_diff_minutes / 30)
+                    
+                if bars_between < self.MIN_BARS_BETWEEN_PIVOTS:
+                    save_log(f"⚠️ Bỏ qua pivot {pivot.get('type', 'unknown')} tại {pivot['time']} do gần với {existing_pivot.get('type', 'unknown')} ({existing_pivot['time']})", DEBUG_LOG_FILE)
+                    save_log(f"Khoảng cách: {bars_between:.1f} nến (tối thiểu {self.MIN_BARS_BETWEEN_PIVOTS})", DEBUG_LOG_FILE)
+                    return False
             
-            # Chỉ thêm vào confirmed_pivots
+            # Nếu đạt điều kiện khoảng cách, thêm pivot vào danh sách
             self.confirmed_pivots.append(pivot)
             
             save_log("\n=== Thêm Pivot Mới ===", DEBUG_LOG_FILE)
-            save_log(f"Loại: {pivot['type']}", DEBUG_LOG_FILE)
+            save_log(f"Loại: {pivot.get('type', 'unknown')}", DEBUG_LOG_FILE)
             save_log(f"Giá: ${pivot['price']:,.2f}", DEBUG_LOG_FILE)
-            save_log(f"Thời gian: {vn_time}", DEBUG_LOG_FILE)
+            save_log(f"Thời gian: {pivot['time']}", DEBUG_LOG_FILE)
             
             return True
 
@@ -555,7 +567,7 @@ class PivotData:
                 # Higher High: a > b và pivots có khuôn mẫu tăng
                 if a > b and c > d:
                     result_type = "HH"
-                    ave_log(f"✅ Pivot ({vn_time}) được phân loại là: {result_type}", DEBUG_LOG_FILE)
+                    save_log(f"✅ Pivot ({vn_time}) được phân loại là: {result_type}", DEBUG_LOG_FILE)
                     save_log(f"  Lý do: a > b (${a:,.2f} > ${b:,.2f}) và c > d (${c:,.2f} > ${d:,.2f})", DEBUG_LOG_FILE)
                 # Lower High: a < b và pivots có khuôn mẫu giảm
                 elif a < b:
@@ -635,6 +647,12 @@ class PivotData:
                 results.append(pivot['price'])
         return results + [None] * (count - len(results)) 
     
+    def add_initial_pivot(self, pivot_data):
+        """
+        API an toàn để thêm pivot ban đầu, cũng kiểm tra khoảng cách
+        """
+        return self._add_confirmed_pivot(pivot_data)
+        
 # Create global instance
 pivot_data = PivotData() 
 
