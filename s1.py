@@ -136,7 +136,24 @@ class PivotData:
         try:
             # 1. Thêm nến mới vào lịch sử
             self.price_history.append(data)
-            save_log(f"\n=== Nến Mới {data['time']} ===", DEBUG_LOG_FILE)
+            
+            # Lấy thời gian từ dữ liệu test
+            if 'test_time' in data:
+                # Format: '2025-03-14 23:30'
+                utc_dt = datetime.strptime(data['test_time'], '%Y-%m-%d %H:%M')
+            else:
+                # Sử dụng current_time nếu không có test_time
+                current_date = datetime.now(pytz.UTC).date()
+                utc_dt = datetime.strptime(f"{current_date} {data['time']}", '%Y-%m-%d %H:%M')
+                
+            # Chuyển sang VN time
+            vn_dt = utc_dt + timedelta(hours=7)
+            
+            # Format strings cho log
+            utc_time_str = utc_dt.strftime('%Y-%m-%d %H:%M')
+            vn_time_str = vn_dt.strftime('%H:%M %d/%m/%Y')
+
+            save_log(f"\n=== Nến {utc_time_str} ({vn_time_str}) ===", DEBUG_LOG_FILE)
             save_log(f"📊 High: ${data['high']:,.2f}, Low: ${data['low']:,.2f}", DEBUG_LOG_FILE)
             save_log(f"📈 Tổng số nến: {len(self.price_history)}", DEBUG_LOG_FILE)
             
@@ -148,6 +165,13 @@ class PivotData:
             # 3. Phát hiện pivot - sử dụng nến ở giữa cửa sổ
             center_idx = len(self.price_history) - self.RIGHT_BARS - 1
             center_candle = self.price_history[center_idx]
+            
+            # Chuyển đổi thời gian UTC sang VN
+            current_date = datetime.now(pytz.UTC).date()
+            utc_time = center_candle['time']
+            utc_dt = datetime.strptime(f"{current_date} {utc_time}", '%Y-%m-%d %H:%M')
+            vn_dt = utc_dt + timedelta(hours=7)
+            vn_time = vn_dt.strftime('%H:%M')
             
             # 4. Kiểm tra high và low của nến ở giữa cửa sổ
             high_pivot = self.detect_pivot(center_candle['high'], 'high')
@@ -296,13 +320,19 @@ class PivotData:
             bool: True nếu thành công, False nếu thất bại
         """
         try:
+            # Chuyển đổi thời gian UTC sang VN
+            current_date = datetime.now(pytz.UTC).date()
+            utc_dt = datetime.strptime(f"{current_date} {pivot['time']}", '%Y-%m-%d %H:%M')
+            vn_dt = utc_dt + timedelta(hours=7)
+            vn_time = vn_dt.strftime('%H:%M %d/%m/%Y')
+            
             # Chỉ thêm vào confirmed_pivots
             self.confirmed_pivots.append(pivot)
             
             save_log("\n=== Thêm Pivot Mới ===", DEBUG_LOG_FILE)
             save_log(f"Loại: {pivot['type']}", DEBUG_LOG_FILE)
             save_log(f"Giá: ${pivot['price']:,.2f}", DEBUG_LOG_FILE)
-            save_log(f"Thời gian: {pivot['time']}", DEBUG_LOG_FILE)
+            save_log(f"Thời gian: {vn_time}", DEBUG_LOG_FILE)
             
             return True
 
@@ -342,32 +372,37 @@ class PivotData:
             save_log(f"📊 Tổng số pivot: {len(self.confirmed_pivots)}", DEBUG_LOG_FILE)
 
             # Chuẩn bị dữ liệu
-            current_date = datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))
             excel_data = []
             
             for pivot in self.confirmed_pivots:
                 # Xử lý thời gian
-                pivot_time = datetime.strptime(pivot['time'], '%H:%M')
-                # Nếu giờ của pivot lớn hơn giờ hiện tại, giảm 1 ngày
-                if pivot_time.hour > current_date.hour:
-                    pivot_date = current_date - timedelta(days=1)
+                if 'test_time' in pivot:
+                    # Nếu có test_time (từ historical test)
+                    utc_dt = datetime.strptime(pivot['test_time'], '%Y-%m-%d %H:%M')
                 else:
-                    pivot_date = current_date
+                    # Nếu không có test_time, dùng time thông thường
+                    current_date = datetime.now(pytz.UTC).date()
+                    utc_dt = datetime.strptime(f"{current_date} {pivot['time']}", '%Y-%m-%d %H:%M')
 
-                full_datetime = datetime.combine(pivot_date.date(), pivot_time.time())
-
+                # Chuyển sang VN time
+                vn_dt = utc_dt + timedelta(hours=7)
+                
                 excel_data.append({
-                    'datetime': full_datetime,
+                    'datetime': vn_dt,  # Đã là giờ VN
                     'price': pivot['price'],
-                    'pivot_type': pivot['type']
+                    'pivot_type': pivot['type'],
+                    'time': vn_dt.strftime('%H:%M'),  # Giờ:phút VN
+                    'date': vn_dt.strftime('%Y-%m-%d')  # Ngày VN
                 })
 
-            # Tạo DataFrame và sắp xếp theo thời gian
+             # Tạo DataFrame và sắp xếp theo thời gian
             df = pd.DataFrame(excel_data)
             df = df.sort_values('datetime')
 
             # Ghi vào Excel với định dạng
             with pd.ExcelWriter('test_results.xlsx', engine='xlsxwriter') as writer:
+                # Đổi tên cột để rõ ràng hơn
+                df.columns = ['Datetime (VN)', 'Price', 'Pivot Type', 'Time (VN)', 'Date (VN)']
                 df.to_excel(writer, sheet_name='Pivot Analysis', index=False)
                 workbook = writer.book
                 worksheet = writer.sheets['Pivot Analysis']
@@ -380,21 +415,23 @@ class PivotData:
                 worksheet.set_column('A:A', 20, datetime_format)  # datetime
                 worksheet.set_column('B:B', 15, price_format)     # price
                 worksheet.set_column('C:C', 10)                   # pivot_type
+                worksheet.set_column('D:D', 10)                   # time
+                worksheet.set_column('E:E', 12)                   # date
 
                 # Thêm thống kê
                 row = len(df) + 2
                 worksheet.write(row, 0, 'Thống kê:')
                 worksheet.write(row + 1, 0, 'Tổng số pivot:')
-                worksheet.write(row + 1, 1, len(df))
+                worksheet.write(row + 1, 1, len(df), price_format)
 
                 # Phân bố pivot
-                types_count = df['pivot_type'].value_counts()
+                types_count = df['Pivot Type'].value_counts()
                 worksheet.write(row + 2, 0, 'Phân bố pivot:')
                 current_row = row + 3
                 for ptype in ['HH', 'HL', 'LH', 'LL']:
                     if ptype in types_count:
                         worksheet.write(current_row, 0, f'{ptype}:')
-                        worksheet.write(current_row, 1, types_count[ptype])
+                        worksheet.write(current_row, 1, types_count[ptype], price_format)
                         current_row += 1
 
             save_log("✅ Đã lưu thành công vào Excel", DEBUG_LOG_FILE)
@@ -488,16 +525,26 @@ class PivotData:
             # 6. Logic xác định loại pivot theo TradingView
             result_type = None
             
+            # Khi log kết quả phân loại pivot, thêm thời gian VN
+            # Lấy thời gian từ nến center được kiểm tra
+            current_date = datetime.now(pytz.UTC).date()
+            center_time = self.price_history[-(self.RIGHT_BARS + 1)]['time']  # Lấy thời gian của nến center
+            
+            # Chuyển đổi sang giờ VN
+            utc_dt = datetime.strptime(f"{current_date} {center_time}", '%Y-%m-%d %H:%M')
+            vn_dt = utc_dt + timedelta(hours=7)
+            vn_time = vn_dt.strftime('%H:%M')  # Chỉ lấy giờ:phút
+            
             if direction == "high":
                 # Higher High: a > b và pivots có khuôn mẫu tăng
                 if a > b and c > d:
                     result_type = "HH"
-                    save_log(f"✅ Pivot được phân loại là: {result_type}", DEBUG_LOG_FILE)
+                    ave_log(f"✅ Pivot ({vn_time}) được phân loại là: {result_type}", DEBUG_LOG_FILE)
                     save_log(f"  Lý do: a > b (${a:,.2f} > ${b:,.2f}) và c > d (${c:,.2f} > ${d:,.2f})", DEBUG_LOG_FILE)
                 # Lower High: a < b và pivots có khuôn mẫu giảm
                 elif a < b:
                     result_type = "LH"
-                    save_log(f"✅ Pivot được phân loại là: {result_type}", DEBUG_LOG_FILE)
+                    save_log(f"✅ Pivot ({vn_time}) được phân loại là: {result_type}", DEBUG_LOG_FILE)
                     save_log(f"  Lý do: a < b (${a:,.2f} < ${b:,.2f})", DEBUG_LOG_FILE)
                 else:
                     save_log("⚠️ Không thể phân loại pivot high", DEBUG_LOG_FILE)
@@ -505,12 +552,12 @@ class PivotData:
                 # Lower Low: a < b và pivots có khuôn mẫu giảm
                 if a < b and c < d:
                     result_type = "LL"
-                    save_log(f"✅ Pivot được phân loại là: {result_type}", DEBUG_LOG_FILE)
+                    ssave_log(f"✅ Pivot ({vn_time}) được phân loại là: {result_type}", DEBUG_LOG_FILE)
                     save_log(f"  Lý do: a < b (${a:,.2f} < ${b:,.2f}) và c < d (${c:,.2f} < ${d:,.2f})", DEBUG_LOG_FILE)
                 # Higher Low: a > b và pivots có khuôn mẫu tăng
                 elif a > b:
                     result_type = "HL"
-                    save_log(f"✅ Pivot được phân loại là: {result_type}", DEBUG_LOG_FILE)
+                    save_log(f"✅ Pivot ({vn_time}) được phân loại là: {result_type}", DEBUG_LOG_FILE)
                     save_log(f"  Lý do: a > b (${a:,.2f} > ${b:,.2f})", DEBUG_LOG_FILE)
                 else:
                     save_log("⚠️ Không thể phân loại pivot low", DEBUG_LOG_FILE)
