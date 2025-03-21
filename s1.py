@@ -181,9 +181,11 @@ class PivotData:
             dict: Pivot mới hoặc None
         """
         try:
+            save_log(f"\n=== Kiểm tra pivot {direction.upper()} (${price:,.2f}) ===", DEBUG_LOG_FILE)
+            
             # 1. Kiểm tra đủ số nến
             if len(self.price_history) < (self.LEFT_BARS + self.RIGHT_BARS + 1):
-                save_log(f"\n⚠️ Chưa đủ nến để xác định pivot", DEBUG_LOG_FILE)
+                save_log(f"⚠️ Chưa đủ nến để xác định pivot", DEBUG_LOG_FILE)
                 return None
 
             # 2. Lấy cửa sổ hiện tại (11 nến)
@@ -199,6 +201,10 @@ class PivotData:
                 # So sánh với các nến bên phải
                 right_prices = [bar['high'] for bar in window[center_idx + 1:]]
                 
+                # Log để dễ theo dõi
+                save_log(f"High của nến trái: ${max(left_prices):,.2f}", DEBUG_LOG_FILE)
+                save_log(f"High của nến phải: ${max(right_prices):,.2f}", DEBUG_LOG_FILE)
+                
                 # Điều kiện pivot high: cao hơn TẤT CẢ các nến bên trái và bên phải
                 is_pivot = price > max(left_prices) and price > max(right_prices)
                 
@@ -208,12 +214,19 @@ class PivotData:
                 # So sánh với các nến bên phải
                 right_prices = [bar['low'] for bar in window[center_idx + 1:]]
                 
+                # Log để dễ theo dõi
+                save_log(f"Low của nến trái: ${min(left_prices):,.2f}", DEBUG_LOG_FILE)
+                save_log(f"Low của nến phải: ${min(right_prices):,.2f}", DEBUG_LOG_FILE)
+                
                 # Điều kiện pivot low: thấp hơn TẤT CẢ các nến bên trái và bên phải
                 is_pivot = price < min(left_prices) and price < min(right_prices)
             
             # 4. Nếu không phải pivot, trả về None
             if not is_pivot:
+                save_log(f"❌ Không phải điểm pivot {direction}", DEBUG_LOG_FILE)
                 return None
+            
+            save_log(f"✅ Là điểm pivot {direction} tại {center_time}", DEBUG_LOG_FILE)
             
             # 5. Nếu là pivot, tạo đối tượng pivot mới
             new_pivot = {
@@ -230,6 +243,8 @@ class PivotData:
                 # 7. Thêm vào danh sách pivot xác nhận
                 if self._add_confirmed_pivot(new_pivot):
                     return new_pivot
+            else:
+                save_log(f"❌ Không thể phân loại pivot {direction}", DEBUG_LOG_FILE)
                     
             return None
             
