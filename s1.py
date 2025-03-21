@@ -374,34 +374,50 @@ class PivotData:
             # Chuẩn bị dữ liệu
             excel_data = []
             
-            for pivot in self.confirmed_pivots:
+            # Sắp xếp pivots theo thời gian
+            sorted_pivots = sorted(
+                self.confirmed_pivots,
+                key=lambda x: datetime.strptime(x["time"], "%H:%M")
+            )
+            
+            # Lấy ngày đầu tiên từ test data hoặc ngày hiện tại
+            start_date = None
+            if 'test_time' in sorted_pivots[0]:
+                start_date = datetime.strptime(sorted_pivots[0]['test_time'], '%Y-%m-%d %H:%M').date()
+            else:
+                start_date = datetime.now(pytz.UTC).date()
+            
+            current_date = start_date
+            prev_hour = None
+            
+            for pivot in sorted_pivots:
                 # Xử lý thời gian
-                if 'test_time' in pivot:
-                    # Nếu có test_time (từ historical test)
-                    utc_dt = datetime.strptime(pivot['test_time'], '%Y-%m-%d %H:%M')
-                else:
-                    # Nếu không có test_time, dùng time thông thường
-                    current_date = datetime.now(pytz.UTC).date()
-                    utc_dt = datetime.strptime(f"{current_date} {pivot['time']}", '%Y-%m-%d %H:%M')
-
-                # Chuyển sang VN time
+                hour = int(pivot['time'].split(':')[0])
+                
+                # Nếu giờ mới nhỏ hơn giờ trước, tăng ngày lên 1
+                if prev_hour is not None and hour < prev_hour:
+                    current_date += timedelta(days=1)
+                prev_hour = hour
+                
+                # Tạo datetime object từ ngày và giờ
+                utc_dt = datetime.strptime(f"{current_date} {pivot['time']}", '%Y-%m-%d %H:%M')
+                
+                # Chuyển sang VN time (+7)
                 vn_dt = utc_dt + timedelta(hours=7)
                 
                 excel_data.append({
-                    'datetime': vn_dt,  # Đã là giờ VN
+                    'datetime': vn_dt,
                     'price': pivot['price'],
                     'pivot_type': pivot['type'],
-                    'time': vn_dt.strftime('%H:%M'),  # Giờ:phút VN
-                    'date': vn_dt.strftime('%Y-%m-%d')  # Ngày VN
+                    'time': vn_dt.strftime('%H:%M'),
+                    'date': vn_dt.strftime('%Y-%m-%d')
                 })
 
-             # Tạo DataFrame và sắp xếp theo thời gian
+            # Tạo DataFrame
             df = pd.DataFrame(excel_data)
-            df = df.sort_values('datetime')
 
             # Ghi vào Excel với định dạng
             with pd.ExcelWriter('test_results.xlsx', engine='xlsxwriter') as writer:
-                # Đổi tên cột để rõ ràng hơn
                 df.columns = ['Datetime (VN)', 'Price', 'Pivot Type', 'Time (VN)', 'Date (VN)']
                 df.to_excel(writer, sheet_name='Pivot Analysis', index=False)
                 workbook = writer.book
