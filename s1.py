@@ -416,8 +416,14 @@ class PivotData:
                 save_log("⚠️ Chưa đủ pivot để phân loại", DEBUG_LOG_FILE)
                 return None
                 
+            # Log thông tin tổng quát trước khi phân tích chi tiết
+            save_log(f"\n=== Phân tích pivot {direction.upper()} (giá: ${price:,.2f}) ===", DEBUG_LOG_FILE)
+            save_log(f"Tổng số pivot hiện có: {len(self.confirmed_pivots)}", DEBUG_LOG_FILE)
+                
             # 2. Lọc và lấy các pivot cùng hướng với pivot hiện tại
             same_direction_pivots = [p for p in self.confirmed_pivots if p['direction'] == direction]
+            save_log(f"Số pivot cùng hướng {direction}: {len(same_direction_pivots)}", DEBUG_LOG_FILE)
+            
             if len(same_direction_pivots) < 2:
                 save_log(f"⚠️ Chưa đủ pivot cùng hướng {direction} để phân loại", DEBUG_LOG_FILE)
                 return None
@@ -428,7 +434,10 @@ class PivotData:
             # 4. Lọc và lấy các pivot hướng ngược lại
             opposite_direction = 'low' if direction == 'high' else 'high'
             opposite_direction_pivots = [p for p in self.confirmed_pivots if p['direction'] == opposite_direction]
+            save_log(f"Số pivot hướng ngược {opposite_direction}: {len(opposite_direction_pivots)}", DEBUG_LOG_FILE)
+            
             if len(opposite_direction_pivots) < 2:
+                save_log(f"⚠️ Chưa đủ pivot hướng ngược {opposite_direction} để phân loại", DEBUG_LOG_FILE)
                 return None
                 
             # 5. Lấy 2 pivot gần nhất có hướng ngược lại
@@ -439,26 +448,47 @@ class PivotData:
             c = opposite_direction_pivots[-1]['price']  # Pivot gần nhất hướng ngược lại
             d = opposite_direction_pivots[-2]['price']  # Pivot thứ 2 hướng ngược lại
             
+            save_log(f"\nGiá các pivot dùng để phân loại:", DEBUG_LOG_FILE)
+            save_log(f"a = ${a:,.2f} (pivot hiện tại - {direction})", DEBUG_LOG_FILE)
+            save_log(f"b = ${b:,.2f} (pivot trước cùng hướng - {direction})", DEBUG_LOG_FILE)
+            save_log(f"c = ${c:,.2f} (pivot ngược hướng mới nhất - {opposite_direction})", DEBUG_LOG_FILE)
+            save_log(f"d = ${d:,.2f} (pivot ngược hướng thứ hai - {opposite_direction})", DEBUG_LOG_FILE)
+            
             # 6. Logic xác định loại pivot theo TradingView
+            result_type = None
+            
             if direction == "high":
                 # Higher High: a > b và pivots có khuôn mẫu tăng
                 if a > b and c > d:
-                    return "HH"
+                    result_type = "HH"
+                    save_log(f"✅ Pivot được phân loại là: {result_type}", DEBUG_LOG_FILE)
+                    save_log(f"  Lý do: a > b (${a:,.2f} > ${b:,.2f}) và c > d (${c:,.2f} > ${d:,.2f})", DEBUG_LOG_FILE)
                 # Lower High: a < b và pivots có khuôn mẫu giảm
                 elif a < b:
-                    return "LH"
+                    result_type = "LH"
+                    save_log(f"✅ Pivot được phân loại là: {result_type}", DEBUG_LOG_FILE)
+                    save_log(f"  Lý do: a < b (${a:,.2f} < ${b:,.2f})", DEBUG_LOG_FILE)
+                else:
+                    save_log("⚠️ Không thể phân loại pivot high", DEBUG_LOG_FILE)
             else:  # direction == "low"
                 # Lower Low: a < b và pivots có khuôn mẫu giảm
                 if a < b and c < d:
-                    return "LL"
+                    result_type = "LL"
+                    save_log(f"✅ Pivot được phân loại là: {result_type}", DEBUG_LOG_FILE)
+                    save_log(f"  Lý do: a < b (${a:,.2f} < ${b:,.2f}) và c < d (${c:,.2f} < ${d:,.2f})", DEBUG_LOG_FILE)
                 # Higher Low: a > b và pivots có khuôn mẫu tăng
                 elif a > b:
-                    return "HL"
+                    result_type = "HL"
+                    save_log(f"✅ Pivot được phân loại là: {result_type}", DEBUG_LOG_FILE)
+                    save_log(f"  Lý do: a > b (${a:,.2f} > ${b:,.2f})", DEBUG_LOG_FILE)
+                else:
+                    save_log("⚠️ Không thể phân loại pivot low", DEBUG_LOG_FILE)
                     
-            return None
+            return result_type
             
         except Exception as e:
             save_log(f"❌ Lỗi khi xác định loại pivot: {str(e)}", DEBUG_LOG_FILE)
+            save_log(traceback.format_exc(), DEBUG_LOG_FILE)
             return None
     
     def _is_valid_pivot_spacing(self, new_pivot_time):
