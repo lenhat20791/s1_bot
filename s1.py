@@ -571,76 +571,91 @@ class PivotData:
             list: [b, c, d, e] - các pivot trước đó theo logic TradingView
         """
         try:
-            # Sắp xếp tất cả pivot theo thời gian (cũ nhất đến mới nhất)
+            # Sắp xếp tất cả pivot theo thời gian (cũ đến mới)
             sorted_pivots = sorted(
                 self.confirmed_pivots,
                 key=lambda x: datetime.strptime(x["time"], "%H:%M")
             )
             
-            # Tạo danh sách riêng cho high và low
+            # Log số lượng pivot theo loại
             high_pivots = [p for p in sorted_pivots if p['direction'] == 'high']
             low_pivots = [p for p in sorted_pivots if p['direction'] == 'low']
             
-            # Log số lượng pivot theo loại
             save_log(f"Số pivot cùng hướng {direction}: {len(high_pivots if direction == 'high' else low_pivots)}", DEBUG_LOG_FILE)
             save_log(f"Số pivot hướng ngược {('low' if direction == 'high' else 'high')}: {len(low_pivots if direction == 'high' else high_pivots)}", DEBUG_LOG_FILE)
             
             # Kiểm tra xem có đủ pivot không
-            if len(high_pivots) < 2 or len(low_pivots) < 2:
+            if not sorted_pivots or len(sorted_pivots) < 4:
                 save_log(f"⚠️ Chưa đủ pivot để xác định các điểm so sánh", DEBUG_LOG_FILE)
                 return [None, None, None, None]
             
-            # Khác với S1 cũ, TradingView tìm các điểm theo một cách đặc biệt
-            # Implement theo logic trong tham số findprevious() của TradingView
-            if direction == 'high':
-                # Tìm low pivot gần nhất trước current_pivot
-                try:
-                    b = low_pivots[-1]['price']  # Pivot low gần nhất
-                except:
-                    b = None
-
-                # Tìm high pivot gần nhất trước b
-                try:
-                    c = high_pivots[-2]['price']  # Pivot high gần thứ 2 (hiện tại đang xét là high pivot)
-                except:
+            # Mô phỏng hàm findprevious() trong chỉ báo TradingView
+            # Lấy các pivot với thứ tự zigzag: high -> low -> high -> low hoặc low -> high -> low -> high
+            
+            # Lấy pivot hiện tại (không tính pivot đang xét)
+            current_pivot_direction = direction
+            
+            # Mảng chứa các pivot theo thứ tự zigzag
+            zigzag_pivots = []
+            
+            # Clone mảng để tìm kiếm
+            remaining_pivots = sorted_pivots.copy()
+            
+            # 1. Tìm pivot ngược hướng gần nhất với pivot hiện tại
+            opposite_direction = 'low' if direction == 'high' else 'high'
+            opposite_pivots = [p for p in reversed(remaining_pivots) if p['direction'] == opposite_direction]
+            if opposite_pivots:
+                b = opposite_pivots[0]['price']  # Pivot ngược hướng gần nhất
+                zigzag_pivots.append(opposite_pivots[0])
+            else:
+                b = None
+            
+            # Nếu không tìm thấy pivot đầu tiên, không thể tiếp tục
+            if b is None:
+                save_log("⚠️ Không tìm thấy pivot ngược hướng đủ gần", DEBUG_LOG_FILE)
+                return [None, None, None, None]
+                
+            # 2. Tìm pivot cùng hướng gần nhất với pivot B
+            if zigzag_pivots:
+                idx = remaining_pivots.index(zigzag_pivots[0])
+                same_pivots = [p for p in reversed(remaining_pivots[:idx]) if p['direction'] == direction]
+                if same_pivots:
+                    c = same_pivots[0]['price']  # Pivot cùng hướng gần nhất trước B
+                    zigzag_pivots.append(same_pivots[0])
+                else:
                     c = None
-                    
-                # Tìm low pivot gần nhất trước c
-                try:
-                    d = low_pivots[-2]['price']  # Pivot low gần thứ 2
-                except:
+            else:
+                c = None
+                
+            # 3. Tìm pivot ngược hướng gần nhất với pivot C
+            if len(zigzag_pivots) >= 2:
+                idx = remaining_pivots.index(zigzag_pivots[1])
+                opposite_pivots = [p for p in reversed(remaining_pivots[:idx]) if p['direction'] == opposite_direction]
+                if opposite_pivots:
+                    d = opposite_pivots[0]['price']  # Pivot ngược hướng gần nhất trước C
+                    zigzag_pivots.append(opposite_pivots[0])
+                else:
                     d = None
-                    
-                # Tìm high pivot gần nhất trước d
-                try:
-                    e = high_pivots[-3]['price'] if len(high_pivots) > 2 else None  # Pivot high gần thứ 3
-                except:
+            else:
+                d = None
+                
+            # 4. Tìm pivot cùng hướng gần nhất với pivot D
+            if len(zigzag_pivots) >= 3:
+                idx = remaining_pivots.index(zigzag_pivots[2])
+                same_pivots = [p for p in reversed(remaining_pivots[:idx]) if p['direction'] == direction]
+                if same_pivots:
+                    e = same_pivots[0]['price']  # Pivot cùng hướng gần nhất trước D
+                    zigzag_pivots.append(same_pivots[0])
+                else:
                     e = None
-                    
-            else:  # direction == 'low'
-                # Tìm high pivot gần nhất trước current_pivot
-                try:
-                    b = high_pivots[-1]['price']  # Pivot high gần nhất
-                except:
-                    b = None
-                    
-                # Tìm low pivot gần nhất trước b
-                try:
-                    c = low_pivots[-2]['price']  # Pivot low gần thứ 2 (hiện tại đang xét là low pivot)
-                except:
-                    c = None
-                    
-                # Tìm high pivot gần nhất trước c
-                try:
-                    d = high_pivots[-2]['price']  # Pivot high gần thứ 2
-                except:
-                    d = None
-                    
-                # Tìm low pivot gần nhất trước d
-                try:
-                    e = low_pivots[-3]['price'] if len(low_pivots) > 2 else None  # Pivot low gần thứ 3
-                except:
-                    e = None
+            else:
+                e = None
+                
+            # Log chi tiết các pivot tìm thấy
+            save_log("\nCác pivot theo cấu trúc ZigZag:", DEBUG_LOG_FILE)
+            if zigzag_pivots:
+                for i, zp in enumerate(zigzag_pivots):
+                    save_log(f"Pivot {chr(98+i)}: {zp['direction']} tại giá ${zp['price']:,.2f} ({zp['time']})", DEBUG_LOG_FILE)
             
             return [b, c, d, e]
             
