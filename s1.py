@@ -821,11 +821,19 @@ class PivotData:
             # Chuẩn bị dữ liệu
             excel_data = []
             
-            # Sắp xếp pivots theo thời gian
-            sorted_pivots = sorted(
-                self.confirmed_pivots,
-                key=lambda x: datetime.strptime(x["time"], "%H:%M")
-            )
+            # Lấy pivots đã được sắp xếp từ hàm get_all_pivots
+            sorted_pivots = self.get_all_pivots()
+            
+            # Log từng pivot để debug
+            save_log("\n=== Debug pivot dates ===", DEBUG_LOG_FILE)
+            for i, pivot in enumerate(sorted_pivots):
+                save_log(f"Pivot #{i+1}: {pivot.get('type', 'unknown')} - ${pivot['price']:,.2f}", DEBUG_LOG_FILE)
+                save_log(f"  UTC time: {pivot.get('time', 'unknown')}", DEBUG_LOG_FILE)
+                save_log(f"  UTC date: {pivot.get('utc_date', 'unknown')}", DEBUG_LOG_FILE)
+                if 'utc_datetime' in pivot:
+                    save_log(f"  UTC datetime: {pivot['utc_datetime']}", DEBUG_LOG_FILE)
+                if 'vn_datetime' in pivot:
+                    save_log(f"  VN datetime: {pivot['vn_datetime']}", DEBUG_LOG_FILE)
             
             for pivot in sorted_pivots:
                 # Ưu tiên sử dụng thông tin ngày giờ đã có sẵn trong pivot
@@ -836,23 +844,33 @@ class PivotData:
                         vn_dt = datetime.strptime(pivot['vn_datetime'], '%Y-%m-%d %H:%M')
                     except:
                         # Fallback nếu không parse được datetime
-                        utc_time = pivot['time']
-                        utc_date = pivot.get('utc_date', datetime.now(pytz.UTC).strftime('%Y-%m-%d'))
-                        utc_dt = datetime.strptime(f"{utc_date} {utc_time}", '%Y-%m-%d %H:%M')
-                        vn_dt = utc_dt + timedelta(hours=7)
+                        try:
+                            utc_time = pivot['time']
+                            utc_date = pivot.get('utc_date', datetime.now(pytz.UTC).strftime('%Y-%m-%d'))
+                            utc_dt = datetime.strptime(f"{utc_date} {utc_time}", '%Y-%m-%d %H:%M')
+                            vn_dt = utc_dt + timedelta(hours=7)
+                        except:
+                            # Nếu vẫn không parse được, sử dụng ngày hiện tại
+                            utc_dt = datetime.now(pytz.UTC)
+                            vn_dt = utc_dt + timedelta(hours=7)
                 elif 'utc_date' in pivot:
                     # Có utc_date và time
                     utc_time = pivot['time']
                     utc_date = pivot['utc_date']
-                    utc_dt = datetime.strptime(f"{utc_date} {utc_time}", '%Y-%m-%d %H:%M')
-                    
-                    # Kiểm tra nếu có vn_date riêng
-                    if 'vn_date' in pivot and 'vn_time' in pivot:
-                        vn_date = pivot['vn_date'] 
-                        vn_time = pivot['vn_time']
-                        vn_dt = datetime.strptime(f"{vn_date} {vn_time}", '%Y-%m-%d %H:%M')
-                    else:
-                        # Chuyển UTC sang VN
+                    try:
+                        utc_dt = datetime.strptime(f"{utc_date} {utc_time}", '%Y-%m-%d %H:%M')
+                        
+                        # Kiểm tra nếu có vn_date riêng
+                        if 'vn_date' in pivot and 'vn_time' in pivot:
+                            vn_date = pivot['vn_date'] 
+                            vn_time = pivot['vn_time']
+                            vn_dt = datetime.strptime(f"{vn_date} {vn_time}", '%Y-%m-%d %H:%M')
+                        else:
+                            # Chuyển UTC sang VN
+                            vn_dt = utc_dt + timedelta(hours=7)
+                    except:
+                        # Nếu parse thất bại, sử dụng ngày hiện tại
+                        utc_dt = datetime.now(pytz.UTC)
                         vn_dt = utc_dt + timedelta(hours=7)
                 else:
                     # Không có thông tin ngày, sử dụng ngày hiện tại
@@ -861,10 +879,9 @@ class PivotData:
                     utc_dt = datetime.strptime(f"{utc_date} {utc_time}", '%Y-%m-%d %H:%M')
                     vn_dt = utc_dt + timedelta(hours=7)
                 
-                # Log chi tiết về datetime để debug
-                save_log(f"Pivot {pivot['type']} (${pivot['price']:,.2f}):", DEBUG_LOG_FILE)
-                save_log(f"  - UTC: {utc_dt.strftime('%Y-%m-%d %H:%M')}", DEBUG_LOG_FILE)
-                save_log(f"  - VN:  {vn_dt.strftime('%Y-%m-%d %H:%M')}", DEBUG_LOG_FILE)
+                save_log(f"Excel data for {pivot['type']} (${pivot['price']:,.2f}):", DEBUG_LOG_FILE)
+                save_log(f"  - Final UTC: {utc_dt.strftime('%Y-%m-%d %H:%M')}", DEBUG_LOG_FILE)
+                save_log(f"  - Final VN:  {vn_dt.strftime('%Y-%m-%d %H:%M')}", DEBUG_LOG_FILE)
                 
                 excel_data.append({
                     'utc_datetime': utc_dt,
@@ -953,7 +970,7 @@ class PivotData:
         return comment
         
     def get_all_pivots(self):
-        """Lấy tất cả các pivot theo thứ tự thời gian"""
+        """Lấy tất cả các pivot theo thứ tự thời gian chính xác (bao gồm ngày)"""
         try:
             if not self.confirmed_pivots:
                 return []
@@ -969,11 +986,37 @@ class PivotData:
                     seen.add(key)
                     unique_pivots.append(pivot)
                     
-            # Sắp xếp theo thời gian
+            # Tạo datetime đầy đủ cho mỗi pivot để sắp xếp chính xác
+            for pivot in unique_pivots:
+                if 'utc_datetime' in pivot:
+                    # Đã có đầy đủ thông tin UTC datetime
+                    try:
+                        pivot['_sort_dt'] = datetime.strptime(pivot['utc_datetime'], '%Y-%m-%d %H:%M')
+                    except:
+                        # Fallback: kết hợp từ utc_date và time
+                        if 'utc_date' in pivot:
+                            utc_date = pivot['utc_date']
+                        else:
+                            utc_date = datetime.now(pytz.UTC).strftime('%Y-%m-%d')
+                        pivot['_sort_dt'] = datetime.strptime(f"{utc_date} {pivot['time']}", '%Y-%m-%d %H:%M')
+                else:
+                    # Không có utc_datetime, tạo từ utc_date và time
+                    if 'utc_date' in pivot:
+                        utc_date = pivot['utc_date']
+                    else:
+                        utc_date = datetime.now(pytz.UTC).strftime('%Y-%m-%d')
+                    pivot['_sort_dt'] = datetime.strptime(f"{utc_date} {pivot['time']}", '%Y-%m-%d %H:%M')
+            
+            # Sắp xếp theo datetime đầy đủ
             sorted_pivots = sorted(
                 unique_pivots,
-                key=lambda x: datetime.strptime(x["time"], "%H:%M")
+                key=lambda x: x['_sort_dt']
             )
+            
+            # Loại bỏ trường sort tạm thời
+            for pivot in sorted_pivots:
+                if '_sort_dt' in pivot:
+                    del pivot['_sort_dt']
             
             save_log(f"\nTổng số pivot sau khi loại bỏ trùng lặp: {len(sorted_pivots)}", DEBUG_LOG_FILE)
             
@@ -983,7 +1026,7 @@ class PivotData:
             save_log(f"❌ Lỗi khi lấy all pivots: {str(e)}", DEBUG_LOG_FILE)
             save_log(traceback.format_exc(), DEBUG_LOG_FILE)
             return []
-    
+        
     def _calculate_bars_between(self, time1, time2):
         """Tính số nến giữa hai thời điểm, xử lý cả trường hợp qua ngày"""
         try:
