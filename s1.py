@@ -818,13 +818,10 @@ class PivotData:
             save_log("\n=== Bắt đầu lưu dữ liệu vào Excel ===", DEBUG_LOG_FILE)
             save_log(f"📊 Tổng số pivot: {len(self.confirmed_pivots)}", DEBUG_LOG_FILE)
 
-            # Chuẩn bị dữ liệu
-            excel_data = []
-            
-            # Lấy pivots đã được sắp xếp từ hàm get_all_pivots
+            # Lấy pivots đã được sắp xếp đúng thứ tự theo thời gian đầy đủ
             sorted_pivots = self.get_all_pivots()
             
-            # Log từng pivot để debug
+            # Log chi tiết datetime của từng pivot để debug
             save_log("\n=== Debug pivot dates ===", DEBUG_LOG_FILE)
             for i, pivot in enumerate(sorted_pivots):
                 save_log(f"Pivot #{i+1}: {pivot.get('type', 'unknown')} - ${pivot['price']:,.2f}", DEBUG_LOG_FILE)
@@ -835,14 +832,18 @@ class PivotData:
                 if 'vn_datetime' in pivot:
                     save_log(f"  VN datetime: {pivot['vn_datetime']}", DEBUG_LOG_FILE)
             
+            # Chuẩn bị dữ liệu cho Excel
+            excel_data = []
+            
             for pivot in sorted_pivots:
-                # Ưu tiên sử dụng thông tin ngày giờ đã có sẵn trong pivot
+                # Ưu tiên sử dụng thông tin datetime đã có sẵn trong pivot
                 if 'utc_datetime' in pivot and 'vn_datetime' in pivot:
                     # Đã có cả thông tin UTC và VN datetime
                     try:
                         utc_dt = datetime.strptime(pivot['utc_datetime'], '%Y-%m-%d %H:%M')
                         vn_dt = datetime.strptime(pivot['vn_datetime'], '%Y-%m-%d %H:%M')
-                    except:
+                    except Exception as dt_error:
+                        save_log(f"Lỗi parse datetime: {str(dt_error)}", DEBUG_LOG_FILE)
                         # Fallback nếu không parse được datetime
                         try:
                             utc_time = pivot['time']
@@ -850,7 +851,7 @@ class PivotData:
                             utc_dt = datetime.strptime(f"{utc_date} {utc_time}", '%Y-%m-%d %H:%M')
                             vn_dt = utc_dt + timedelta(hours=7)
                         except:
-                            # Nếu vẫn không parse được, sử dụng ngày hiện tại
+                            # Nếu vẫn lỗi thì dùng thời gian hiện tại
                             utc_dt = datetime.now(pytz.UTC)
                             vn_dt = utc_dt + timedelta(hours=7)
                 elif 'utc_date' in pivot:
@@ -879,6 +880,7 @@ class PivotData:
                     utc_dt = datetime.strptime(f"{utc_date} {utc_time}", '%Y-%m-%d %H:%M')
                     vn_dt = utc_dt + timedelta(hours=7)
                 
+                # Log dữ liệu final để kiểm tra
                 save_log(f"Excel data for {pivot['type']} (${pivot['price']:,.2f}):", DEBUG_LOG_FILE)
                 save_log(f"  - Final UTC: {utc_dt.strftime('%Y-%m-%d %H:%M')}", DEBUG_LOG_FILE)
                 save_log(f"  - Final VN:  {vn_dt.strftime('%Y-%m-%d %H:%M')}", DEBUG_LOG_FILE)
@@ -895,65 +897,65 @@ class PivotData:
                     'vn_date': vn_dt.strftime('%Y-%m-%d')
                 })
 
-            # Tạo DataFrame
-            df = pd.DataFrame(excel_data)
+                # Tạo DataFrame
+                df = pd.DataFrame(excel_data)
 
-            # Ghi vào Excel với định dạng
-            with pd.ExcelWriter('test_results.xlsx', engine='xlsxwriter') as writer:
-                # Chọn và đổi tên cột để hiển thị cả UTC và VN time
-                columns_to_export = {
-                    'utc_datetime': 'Datetime (UTC)',
-                    'vn_datetime': 'Datetime (VN)',
-                    'price': 'Price',
-                    'pivot_type': 'Pivot Type',
-                    'direction': 'Direction',
-                    'utc_time': 'Time (UTC)',
-                    'vn_time': 'Time (VN)',
-                    'vn_date': 'Date (VN)'
-                }
-                
-                export_df = df[columns_to_export.keys()].copy()
-                export_df.columns = columns_to_export.values()
-                export_df.to_excel(writer, sheet_name='Pivot Analysis', index=False)
-                
-                workbook = writer.book
-                worksheet = writer.sheets['Pivot Analysis']
+                # Ghi vào Excel với định dạng
+                with pd.ExcelWriter('test_results.xlsx', engine='xlsxwriter') as writer:
+                    # Chọn và đổi tên cột để hiển thị cả UTC và VN time
+                    columns_to_export = {
+                        'utc_datetime': 'Datetime (UTC)',
+                        'vn_datetime': 'Datetime (VN)',
+                        'price': 'Price',
+                        'pivot_type': 'Pivot Type',
+                        'direction': 'Direction',
+                        'utc_time': 'Time (UTC)',
+                        'vn_time': 'Time (VN)',
+                        'vn_date': 'Date (VN)'
+                    }
+                    
+                    export_df = df[columns_to_export.keys()].copy()
+                    export_df.columns = columns_to_export.values()
+                    export_df.to_excel(writer, sheet_name='Pivot Analysis', index=False)
+                    
+                    workbook = writer.book
+                    worksheet = writer.sheets['Pivot Analysis']
 
-                # Định dạng cột
-                datetime_format = workbook.add_format({'num_format': 'yyyy-mm-dd hh:mm:ss'})
-                price_format = workbook.add_format({'num_format': '$#,##0.00'})
-                
-                # Áp dụng định dạng
-                worksheet.set_column('A:A', 20, datetime_format)  # UTC datetime
-                worksheet.set_column('B:B', 20, datetime_format)  # VN datetime
-                worksheet.set_column('C:C', 15, price_format)     # price
-                worksheet.set_column('D:D', 10)                   # pivot_type
-                worksheet.set_column('E:E', 10)                   # direction
-                worksheet.set_column('F:F', 10)                   # UTC time
-                worksheet.set_column('G:G', 10)                   # VN time
+                    # Định dạng cột
+                    datetime_format = workbook.add_format({'num_format': 'yyyy-mm-dd hh:mm:ss'})
+                    price_format = workbook.add_format({'num_format': '$#,##0.00'})
+                    
+                    # Áp dụng định dạng
+                    worksheet.set_column('A:A', 20, datetime_format)  # UTC datetime
+                    worksheet.set_column('B:B', 20, datetime_format)  # VN datetime
+                    worksheet.set_column('C:C', 15, price_format)     # price
+                    worksheet.set_column('D:D', 10)                   # pivot_type
+                    worksheet.set_column('E:E', 10)                   # direction
+                    worksheet.set_column('F:F', 10)                   # UTC time
+                    worksheet.set_column('G:G', 10)                   # VN time
 
-                # Thêm thống kê
-                row = len(export_df) + 2
-                worksheet.write(row, 0, 'Thống kê:')
-                worksheet.write(row + 1, 0, 'Tổng số pivot:')
-                worksheet.write(row + 1, 1, len(export_df), price_format)
+                    # Thêm thống kê
+                    row = len(export_df) + 2
+                    worksheet.write(row, 0, 'Thống kê:')
+                    worksheet.write(row + 1, 0, 'Tổng số pivot:')
+                    worksheet.write(row + 1, 1, len(export_df), price_format)
 
-                # Phân bố pivot
-                types_count = export_df['Pivot Type'].value_counts()
-                worksheet.write(row + 2, 0, 'Phân bố pivot:')
-                current_row = row + 3
-                for ptype in ['HH', 'HL', 'LH', 'LL']:
-                    if ptype in types_count:
-                        worksheet.write(current_row, 0, f'{ptype}:')
-                        worksheet.write(current_row, 1, types_count[ptype], price_format)
-                        current_row += 1
-                        
-                # Thêm chú thích về múi giờ
-                worksheet.write(current_row + 1, 0, 'Chú thích:')
-                worksheet.write(current_row + 2, 0, '- UTC: Giờ quốc tế')
-                worksheet.write(current_row + 3, 0, '- VN: Giờ Việt Nam (GMT+7)')
+                    # Phân bố pivot
+                    types_count = export_df['Pivot Type'].value_counts()
+                    worksheet.write(row + 2, 0, 'Phân bố pivot:')
+                    current_row = row + 3
+                    for ptype in ['HH', 'HL', 'LH', 'LL']:
+                        if ptype in types_count:
+                            worksheet.write(current_row, 0, f'{ptype}:')
+                            worksheet.write(current_row, 1, types_count[ptype], price_format)
+                            current_row += 1
+                            
+                    # Thêm chú thích về múi giờ
+                    worksheet.write(current_row + 1, 0, 'Chú thích:')
+                    worksheet.write(current_row + 2, 0, '- UTC: Giờ quốc tế')
+                    worksheet.write(current_row + 3, 0, '- VN: Giờ Việt Nam (GMT+7)')
 
-            save_log("✅ Đã lưu thành công vào Excel", DEBUG_LOG_FILE)
+                save_log("✅ Đã lưu thành công vào Excel", DEBUG_LOG_FILE)
 
         except Exception as e:
             save_log(f"\n❌ Lỗi khi lưu Excel: {str(e)}", DEBUG_LOG_FILE)
@@ -988,8 +990,8 @@ class PivotData:
                     
             # Tạo datetime đầy đủ cho mỗi pivot để sắp xếp chính xác
             for pivot in unique_pivots:
+                # Ưu tiên sử dụng utc_datetime nếu có
                 if 'utc_datetime' in pivot:
-                    # Đã có đầy đủ thông tin UTC datetime
                     try:
                         pivot['_sort_dt'] = datetime.strptime(pivot['utc_datetime'], '%Y-%m-%d %H:%M')
                     except:
@@ -1070,23 +1072,29 @@ class PivotData:
                 # Đánh dấu pivot ban đầu bỏ qua kiểm tra khoảng cách
                 pivot['skip_spacing_check'] = True
                 
-                # Chuyển đổi thời gian Việt Nam sang UTC (trừ đi 7 giờ)
+                # Tạo vn_datetime đầy đủ
                 vn_datetime_str = f"{pivot['vn_date']} {pivot['vn_time']}"
-                vn_datetime = datetime.strptime(vn_datetime_str, '%Y-%m-%d %H:%M')
-                utc_datetime = vn_datetime - timedelta(hours=7)
                 
-                # Thêm thời gian UTC vào pivot
-                pivot['time'] = utc_datetime.strftime('%H:%M')  # Thời gian UTC định dạng HH:MM cho S1
-                pivot['utc_date'] = utc_datetime.strftime('%Y-%m-%d')
-                pivot['utc_datetime'] = utc_datetime.strftime('%Y-%m-%d %H:%M')
-                pivot['vn_datetime'] = vn_datetime_str
-                
-                # Log thông tin pivot với cả hai múi giờ
-                save_log(f"- {pivot['type']} tại ${pivot['price']:,.2f}", DEBUG_LOG_FILE)
-                save_log(f"  VN: {pivot['vn_datetime']} / UTC: {pivot['utc_datetime']}", DEBUG_LOG_FILE)
-                
-                # Thêm pivot vào danh sách
-                self._add_confirmed_pivot(pivot)
+                # Chuyển đổi thời gian Việt Nam sang UTC (trừ đi 7 giờ)
+                try:
+                    vn_datetime = datetime.strptime(vn_datetime_str, '%Y-%m-%d %H:%M')
+                    utc_datetime = vn_datetime - timedelta(hours=7)
+                    
+                    # Thêm thông tin UTC vào pivot
+                    pivot['time'] = utc_datetime.strftime('%H:%M')  # Thời gian UTC định dạng HH:MM cho S1
+                    pivot['utc_date'] = utc_datetime.strftime('%Y-%m-%d')
+                    pivot['utc_datetime'] = utc_datetime.strftime('%Y-%m-%d %H:%M')
+                    pivot['vn_datetime'] = vn_datetime_str
+                    
+                    # Log thông tin pivot với cả hai múi giờ
+                    save_log(f"- {pivot['type']} tại ${pivot['price']:,.2f}", DEBUG_LOG_FILE)
+                    save_log(f"  VN: {pivot['vn_datetime']} / UTC: {pivot['utc_datetime']}", DEBUG_LOG_FILE)
+                    
+                    # Thêm pivot vào danh sách
+                    self._add_confirmed_pivot(pivot)
+                except Exception as e:
+                    save_log(f"❌ Lỗi khi chuyển đổi thời gian cho pivot {pivot['type']}: {str(e)}", DEBUG_LOG_FILE)
+                    continue
                 
             save_log("✅ Đã thêm xong pivot ban đầu", DEBUG_LOG_FILE)
             return True
