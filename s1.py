@@ -808,7 +808,6 @@ class PivotData:
             save_log(f"\n❌ Lỗi khi lấy recent pivots: {str(e)}", DEBUG_LOG_FILE)
             return []
               
-    # Cập nhật hàm save_to_excel để hiển thị cả thời gian UTC và Việt Nam
     def save_to_excel(self):
         try:
             if not self.confirmed_pivots:
