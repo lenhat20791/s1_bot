@@ -137,9 +137,12 @@ class PivotData:
         Xử lý khi có dữ liệu mới - hàm duy nhất để xử lý nến mới
         """
         try:
+            # Xác định nếu dữ liệu đầu vào đã có thông tin múi giờ
+            using_vn_time = 'time' in data and ('date' in data or 'vn_date' in data)
+            
             # Lưu thời gian chính xác cho nến mới
             if 'test_time' in data:
-                # Format: '2025-03-14 23:30' - Thời gian UTC
+                # Format: '2025-03-14 23:30' - đã là thời gian UTC
                 utc_dt = datetime.strptime(data['test_time'], '%Y-%m-%d %H:%M')
                 vn_dt = utc_dt + timedelta(hours=7)
                 
@@ -148,26 +151,54 @@ class PivotData:
                 data['vn_date'] = vn_dt.strftime('%Y-%m-%d')
                 data['vn_datetime'] = vn_dt.strftime('%Y-%m-%d %H:%M')
                 
+                # Đảm bảo có thông tin UTC
+                data['time'] = utc_dt.strftime('%H:%M')  # Thời gian UTC cho S1
+                data['utc_date'] = utc_dt.strftime('%Y-%m-%d')
+                data['utc_datetime'] = utc_dt.strftime('%Y-%m-%d %H:%M')
+            elif using_vn_time:
+                # Đầu vào là thời gian Việt Nam, chuyển sang UTC
+                vn_date = data.get('vn_date', data.get('date'))
+                vn_time = data['time']
+                
+                save_log(f"Nhận dữ liệu múi giờ Việt Nam: {vn_date} {vn_time}", DEBUG_LOG_FILE)
+                
+                try:
+                    vn_dt = datetime.strptime(f"{vn_date} {vn_time}", '%Y-%m-%d %H:%M')
+                    utc_dt = vn_dt - timedelta(hours=7)
+                    
+                    # Lưu lại thông tin thời gian VN
+                    data['vn_time'] = vn_time
+                    data['vn_date'] = vn_date
+                    data['vn_datetime'] = f"{vn_date} {vn_time}"
+                    
+                    # Chuyển sang UTC cho S1
+                    data['time'] = utc_dt.strftime('%H:%M')  # Thời gian UTC
+                    data['utc_date'] = utc_dt.strftime('%Y-%m-%d')
+                    data['utc_datetime'] = utc_dt.strftime('%Y-%m-%d %H:%M')
+                    data['test_time'] = data['utc_datetime']  # Thêm test_time
+                    
+                    save_log(f"Đã chuyển sang UTC: {data['utc_datetime']}", DEBUG_LOG_FILE)
+                except Exception as e:
+                    save_log(f"⚠️ Lỗi khi chuyển đổi thời gian VN sang UTC: {str(e)}", DEBUG_LOG_FILE)
+            
             # 1. Thêm nến mới vào lịch sử
             self.price_history.append(data)
             
-            # Lấy thời gian từ dữ liệu test
-            if 'test_time' in data:
+            # Lấy thời gian từ dữ liệu cho việc log
+            if 'vn_datetime' in data:
+                log_datetime = f"{data['vn_datetime']} (VN) / {data.get('utc_datetime', 'Unknown')} (UTC)"
+            elif 'test_time' in data:
                 # Format: '2025-03-14 23:30'
                 utc_dt = datetime.strptime(data['test_time'], '%Y-%m-%d %H:%M')
+                vn_dt = utc_dt + timedelta(hours=7)
+                log_datetime = f"{vn_dt.strftime('%Y-%m-%d %H:%M')} (VN) / {data['test_time']} (UTC)"
             else:
-                # Sử dụng current_time nếu không có test_time
+                # Sử dụng thời gian hiện tại
                 current_date = datetime.now(pytz.UTC).date()
-                utc_dt = datetime.strptime(f"{current_date} {data['time']}", '%Y-%m-%d %H:%M')
+                utc_time = data.get('time', 'Unknown')
+                log_datetime = f"{current_date} {utc_time} (UTC)"
                 
-            # Chuyển sang VN time
-            vn_dt = utc_dt + timedelta(hours=7)
-            
-            # Format strings cho log
-            utc_time_str = utc_dt.strftime('%Y-%m-%d %H:%M')
-            utc_date_time = f"{utc_time_str} UTC"
-
-            save_log(f"\n=== Nến {utc_time_str} ({utc_date_time}) ===", DEBUG_LOG_FILE)
+            save_log(f"\n=== Nến {log_datetime} ===", DEBUG_LOG_FILE)
             save_log(f"📊 High: ${data['high']:,.2f}, Low: ${data['low']:,.2f}", DEBUG_LOG_FILE)
             save_log(f"📈 Tổng số nến: {len(self.price_history)}", DEBUG_LOG_FILE)
             
@@ -179,13 +210,6 @@ class PivotData:
             # 3. Phát hiện pivot - sử dụng nến ở giữa cửa sổ
             center_idx = len(self.price_history) - self.RIGHT_BARS - 1
             center_candle = self.price_history[center_idx]
-            
-            # Chuyển đổi thời gian UTC sang VN
-            current_date = datetime.now(pytz.UTC).date()
-            utc_time = center_candle['time']
-            utc_dt = datetime.strptime(f"{current_date} {utc_time}", '%Y-%m-%d %H:%M')
-            vn_dt = utc_dt + timedelta(hours=7)
-            vn_time = vn_dt.strftime('%H:%M')
             
             # 4. Phân tích cả nến thay vì tách biệt high và low
             self.analyze_candle(center_candle)
@@ -280,7 +304,6 @@ class PivotData:
             save_log(f"❌ Lỗi khi xác định xu hướng: {str(e)}", DEBUG_LOG_FILE)
             return 'neutral'  # Default to neutral on error
 
-    # Cập nhật hàm detect_pivot để xử lý múi giờ chính xác
     def detect_pivot(self, price, direction):
         """
         Phát hiện pivot theo logic TradingView chính xác
@@ -804,30 +827,44 @@ class PivotData:
                 key=lambda x: datetime.strptime(x["time"], "%H:%M")
             )
             
-            # Lấy ngày đầu tiên từ test data hoặc ngày hiện tại
-            start_date = None
-            if 'utc_date' in sorted_pivots[0]:
-                start_date = datetime.strptime(sorted_pivots[0]['utc_date'], '%Y-%m-%d').date()
-            else:
-                start_date = datetime.now(pytz.UTC).date()
-            
-            current_date = start_date
-            prev_hour = None
-            
             for pivot in sorted_pivots:
-                # Xử lý thời gian
-                hour = int(pivot['time'].split(':')[0])
+                # Ưu tiên sử dụng thông tin ngày giờ đã có sẵn trong pivot
+                if 'utc_datetime' in pivot and 'vn_datetime' in pivot:
+                    # Đã có cả thông tin UTC và VN datetime
+                    try:
+                        utc_dt = datetime.strptime(pivot['utc_datetime'], '%Y-%m-%d %H:%M')
+                        vn_dt = datetime.strptime(pivot['vn_datetime'], '%Y-%m-%d %H:%M')
+                    except:
+                        # Fallback nếu không parse được datetime
+                        utc_time = pivot['time']
+                        utc_date = pivot.get('utc_date', datetime.now(pytz.UTC).strftime('%Y-%m-%d'))
+                        utc_dt = datetime.strptime(f"{utc_date} {utc_time}", '%Y-%m-%d %H:%M')
+                        vn_dt = utc_dt + timedelta(hours=7)
+                elif 'utc_date' in pivot:
+                    # Có utc_date và time
+                    utc_time = pivot['time']
+                    utc_date = pivot['utc_date']
+                    utc_dt = datetime.strptime(f"{utc_date} {utc_time}", '%Y-%m-%d %H:%M')
+                    
+                    # Kiểm tra nếu có vn_date riêng
+                    if 'vn_date' in pivot and 'vn_time' in pivot:
+                        vn_date = pivot['vn_date'] 
+                        vn_time = pivot['vn_time']
+                        vn_dt = datetime.strptime(f"{vn_date} {vn_time}", '%Y-%m-%d %H:%M')
+                    else:
+                        # Chuyển UTC sang VN
+                        vn_dt = utc_dt + timedelta(hours=7)
+                else:
+                    # Không có thông tin ngày, sử dụng ngày hiện tại
+                    utc_time = pivot['time']
+                    utc_date = datetime.now(pytz.UTC).strftime('%Y-%m-%d')
+                    utc_dt = datetime.strptime(f"{utc_date} {utc_time}", '%Y-%m-%d %H:%M')
+                    vn_dt = utc_dt + timedelta(hours=7)
                 
-                # Nếu giờ mới nhỏ hơn giờ trước, tăng ngày lên 1
-                if prev_hour is not None and hour < prev_hour:
-                    current_date += timedelta(days=1)
-                prev_hour = hour
-                
-                # Tạo datetime object từ ngày và giờ
-                utc_dt = datetime.strptime(f"{current_date} {pivot['time']}", '%Y-%m-%d %H:%M')
-                
-                # Chuyển sang VN time (+7)
-                vn_dt = utc_dt + timedelta(hours=7)
+                # Log chi tiết về datetime để debug
+                save_log(f"Pivot {pivot['type']} (${pivot['price']:,.2f}):", DEBUG_LOG_FILE)
+                save_log(f"  - UTC: {utc_dt.strftime('%Y-%m-%d %H:%M')}", DEBUG_LOG_FILE)
+                save_log(f"  - VN:  {vn_dt.strftime('%Y-%m-%d %H:%M')}", DEBUG_LOG_FILE)
                 
                 excel_data.append({
                     'utc_datetime': utc_dt,
@@ -854,7 +891,8 @@ class PivotData:
                     'pivot_type': 'Pivot Type',
                     'direction': 'Direction',
                     'utc_time': 'Time (UTC)',
-                    'vn_time': 'Time (VN)'
+                    'vn_time': 'Time (VN)',
+                    'vn_date': 'Date (VN)'
                 }
                 
                 export_df = df[columns_to_export.keys()].copy()
@@ -963,7 +1001,57 @@ class PivotData:
         except Exception as e:
             save_log(f"❌ Lỗi khi tính số nến giữa hai thời điểm: {str(e)}", DEBUG_LOG_FILE)
             return 0 
-          
+    def add_initial_trading_view_pivots(self, initial_pivots):
+        """
+        Thêm các pivot ban đầu từ Trading View với xử lý đúng múi giờ
+        
+        Args:
+            initial_pivots: Danh sách các pivot ban đầu với thời gian Việt Nam
+        
+        Returns:
+            bool: True nếu thành công, False nếu thất bại
+        """
+        try:
+            # Thông báo số lượng pivot
+            save_log("\n=== Đang thêm pivot ban đầu từ Trading View ===", DEBUG_LOG_FILE)
+            save_log("(Đây là thời gian theo múi giờ Việt Nam GMT+7)", DEBUG_LOG_FILE)
+            save_log(f"Tổng số pivot khởi tạo: {len(initial_pivots)}", DEBUG_LOG_FILE)
+            
+            # Chuyển đổi thời gian từ Việt Nam (GMT+7) về UTC và thêm vào
+            for pivot in initial_pivots:
+                # Kiểm tra và đảm bảo pivot có vn_time và vn_date
+                if 'vn_time' not in pivot or 'vn_date' not in pivot:
+                    save_log(f"⚠️ Pivot thiếu thông tin vn_time hoặc vn_date: {pivot}", DEBUG_LOG_FILE)
+                    continue
+                    
+                # Đánh dấu pivot ban đầu bỏ qua kiểm tra khoảng cách
+                pivot['skip_spacing_check'] = True
+                
+                # Chuyển đổi thời gian Việt Nam sang UTC (trừ đi 7 giờ)
+                vn_datetime_str = f"{pivot['vn_date']} {pivot['vn_time']}"
+                vn_datetime = datetime.strptime(vn_datetime_str, '%Y-%m-%d %H:%M')
+                utc_datetime = vn_datetime - timedelta(hours=7)
+                
+                # Thêm thời gian UTC vào pivot
+                pivot['time'] = utc_datetime.strftime('%H:%M')  # Thời gian UTC định dạng HH:MM cho S1
+                pivot['utc_date'] = utc_datetime.strftime('%Y-%m-%d')
+                pivot['utc_datetime'] = utc_datetime.strftime('%Y-%m-%d %H:%M')
+                pivot['vn_datetime'] = vn_datetime_str
+                
+                # Log thông tin pivot với cả hai múi giờ
+                save_log(f"- {pivot['type']} tại ${pivot['price']:,.2f}", DEBUG_LOG_FILE)
+                save_log(f"  VN: {pivot['vn_datetime']} / UTC: {pivot['utc_datetime']}", DEBUG_LOG_FILE)
+                
+                # Thêm pivot vào danh sách
+                self._add_confirmed_pivot(pivot)
+                
+            save_log("✅ Đã thêm xong pivot ban đầu", DEBUG_LOG_FILE)
+            return True
+            
+        except Exception as e:
+            save_log(f"❌ Lỗi khi thêm pivot ban đầu: {str(e)}", DEBUG_LOG_FILE)
+            save_log(traceback.format_exc(), DEBUG_LOG_FILE)
+            return False      
     def add_initial_pivot(self, pivot_data):
         """
         API an toàn để thêm pivot ban đầu, cũng kiểm tra khoảng cách
