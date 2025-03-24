@@ -1122,7 +1122,97 @@ class PivotData:
         API an toàn để thêm pivot ban đầu, cũng kiểm tra khoảng cách
         """
         return self._add_confirmed_pivot(pivot_data)
-        
+    
+    def add_initial_trading_view_pivots(self, pivots):
+        """
+        Thêm các pivot ban đầu vào hệ thống theo logic TradingView
+        Args:
+            pivots: List các pivot với format
+            {
+                'type': 'LL/LH/HL/HH',
+                'price': float,
+                'vn_time': 'HH:MM',
+                'vn_date': 'YYYY-MM-DD',
+                'direction': 'high/low',
+                'confirmed': True
+            }
+        Returns:
+            bool: True nếu thành công, False nếu thất bại
+        """
+        try:
+            save_log("\n=== Thêm các pivot ban đầu ===", DEBUG_LOG_FILE)
+            save_log(f"Số lượng pivot: {len(pivots)}", DEBUG_LOG_FILE)
+            
+            # Kiểm tra số lượng pivot
+            if len(pivots) != 4:
+                save_log("❌ Số lượng pivot phải là 4 (LL, LH, HL, HH)", DEBUG_LOG_FILE)
+                return False
+                
+            # Kiểm tra thứ tự các loại pivot
+            pivot_types = [p['type'] for p in pivots]
+            expected_types = ['LL', 'LH', 'HL', 'HH']
+            
+            if pivot_types != expected_types:
+                save_log(f"❌ Thứ tự pivot không đúng. Nhận được: {pivot_types}, cần: {expected_types}", DEBUG_LOG_FILE)
+                return False
+            
+            # Reset lại toàn bộ dữ liệu hiện có
+            self.clear_all()
+            
+            for pivot in pivots:
+                try:
+                    # Chuyển đổi thời gian VN sang UTC
+                    vn_dt_str = f"{pivot['vn_date']} {pivot['vn_time']}"
+                    vn_dt = datetime.strptime(vn_dt_str, '%Y-%m-%d %H:%M')
+                    vn_tz = pytz.timezone('Asia/Ho_Chi_Minh')
+                    vn_dt = vn_tz.localize(vn_dt)
+                    utc_dt = vn_dt.astimezone(pytz.UTC)
+                    
+                    # Tạo pivot mới với đầy đủ thông tin thời gian
+                    new_pivot = {
+                        'type': pivot['type'],
+                        'price': float(pivot['price']),
+                        'direction': pivot['direction'],
+                        'confirmed': True,
+                        'time': utc_dt.strftime('%H:%M'),  # Giờ UTC cho pivot
+                        'utc_date': utc_dt.strftime('%Y-%m-%d'),
+                        'utc_datetime': utc_dt.strftime('%Y-%m-%d %H:%M'),
+                        'vn_date': pivot['vn_date'],
+                        'vn_time': pivot['vn_time'],
+                        'vn_datetime': vn_dt_str,
+                        'skip_spacing_check': True  # Bỏ qua kiểm tra khoảng cách cho pivot ban đầu
+                    }
+                    
+                    save_log(f"\nThêm pivot {pivot['type']}:", DEBUG_LOG_FILE)
+                    save_log(f"Giá: ${pivot['price']:,.2f}", DEBUG_LOG_FILE)
+                    save_log(f"Thời gian VN: {new_pivot['vn_datetime']}", DEBUG_LOG_FILE)
+                    save_log(f"Thời gian UTC: {new_pivot['utc_datetime']}", DEBUG_LOG_FILE)
+                    
+                    # Thêm vào danh sách pivot
+                    if self._add_confirmed_pivot(new_pivot):
+                        save_log("✅ Thêm thành công!", DEBUG_LOG_FILE)
+                    else:
+                        save_log("❌ Thêm thất bại!", DEBUG_LOG_FILE)
+                        raise Exception(f"Không thể thêm pivot {pivot['type']}")
+                        
+                except Exception as e:
+                    save_log(f"❌ Lỗi khi xử lý pivot {pivot['type']}: {str(e)}", DEBUG_LOG_FILE)
+                    save_log(traceback.format_exc(), DEBUG_LOG_FILE)
+                    return False
+                    
+            # Ghi log kết quả cuối cùng
+            save_log(f"\n✅ Đã thêm thành công {len(self.confirmed_pivots)} pivot ban đầu", DEBUG_LOG_FILE)
+            save_log("Chi tiết:", DEBUG_LOG_FILE)
+            for p in self.confirmed_pivots:
+                save_log(f"• {p['type']}: ${p['price']:,.2f} ({p['vn_datetime']})", DEBUG_LOG_FILE)
+                
+            return True
+            
+        except Exception as e:
+            save_log(f"❌ Lỗi khi thêm pivot ban đầu: {str(e)}", DEBUG_LOG_FILE)
+            save_log(traceback.format_exc(), DEBUG_LOG_FILE)
+            return False
+    
 # Create global instance
 pivot_data = PivotData() 
 
