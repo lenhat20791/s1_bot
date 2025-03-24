@@ -1037,63 +1037,85 @@ class PivotData:
         except Exception as e:
             save_log(f"❌ Lỗi khi tính số nến giữa hai thời điểm: {str(e)}", DEBUG_LOG_FILE)
             return 0 
-    def add_initial_trading_view_pivots(self, initial_pivots):
+    def parse_pivot_input(pivot_text):
         """
-        Thêm các pivot ban đầu từ Trading View với xử lý đúng múi giờ
-        
-        Args:
-            initial_pivots: Danh sách các pivot ban đầu với thời gian Việt Nam
-        
-        Returns:
-            bool: True nếu thành công, False nếu thất bại
+        Phân tích cú pháp đầu vào để tạo pivot
         """
         try:
-            # Thông báo số lượng pivot
-            save_log("\n=== Đang thêm pivot ban đầu từ Trading View ===", DEBUG_LOG_FILE)
-            save_log("(Đây là thời gian theo múi giờ Việt Nam GMT+7)", DEBUG_LOG_FILE)
-            save_log(f"Tổng số pivot khởi tạo: {len(initial_pivots)}", DEBUG_LOG_FILE)
+            print(f"Parsing pivot input: {pivot_text}")
+            parts = pivot_text.strip().split(":")
             
-            # Chuyển đổi thời gian từ Việt Nam (GMT+7) về UTC và thêm vào
-            for pivot in initial_pivots:
-                # Kiểm tra và đảm bảo pivot có vn_time và vn_date
-                if 'vn_time' not in pivot or 'vn_date' not in pivot:
-                    save_log(f"⚠️ Pivot thiếu thông tin vn_time hoặc vn_date: {pivot}", DEBUG_LOG_FILE)
-                    continue
-                    
-                # Đánh dấu pivot ban đầu bỏ qua kiểm tra khoảng cách
-                pivot['skip_spacing_check'] = True
+            # Kiểm tra số lượng phần tử tối thiểu
+            if len(parts) < 3:
+                print("Không đủ thành phần trong input")
+                return None
                 
-                # Tạo vn_datetime đầy đủ
-                vn_datetime_str = f"{pivot['vn_date']} {pivot['vn_time']}"
+            pivot_type = parts[0].upper()  # LL, LH, HL, HH
+            price = float(parts[1])
+            
+            # Xử lý phần thời gian và ngày tháng
+            from datetime import datetime
+            import pytz
+            
+            # Lấy ngày hiện tại theo múi giờ VN
+            now = datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))
+            default_vn_date = now.strftime('%Y-%m-%d')
+            
+            # Xử lý định dạng thời gian để đảm bảo có HH:MM
+            if len(parts) == 3:  # Định dạng không có ngày: LL:83597:06:30
+                time_str = parts[2]
+                vn_date = default_vn_date
+            else:  # Có ngày: LL:83597:23-03-2025:06:30
+                date_part = parts[2]
+                time_str = parts[3]
                 
-                # Chuyển đổi thời gian Việt Nam sang UTC (trừ đi 7 giờ)
-                try:
-                    vn_datetime = datetime.strptime(vn_datetime_str, '%Y-%m-%d %H:%M')
-                    utc_datetime = vn_datetime - timedelta(hours=7)
-                    
-                    # Thêm thông tin UTC vào pivot
-                    pivot['time'] = utc_datetime.strftime('%H:%M')  # Thời gian UTC định dạng HH:MM cho S1
-                    pivot['utc_date'] = utc_datetime.strftime('%Y-%m-%d')
-                    pivot['utc_datetime'] = utc_datetime.strftime('%Y-%m-%d %H:%M')
-                    pivot['vn_datetime'] = vn_datetime_str
-                    
-                    # Log thông tin pivot với cả hai múi giờ
-                    save_log(f"- {pivot['type']} tại ${pivot['price']:,.2f}", DEBUG_LOG_FILE)
-                    save_log(f"  VN: {pivot['vn_datetime']} / UTC: {pivot['utc_datetime']}", DEBUG_LOG_FILE)
-                    
-                    # Thêm pivot vào danh sách
-                    self._add_confirmed_pivot(pivot)
-                except Exception as e:
-                    save_log(f"❌ Lỗi khi chuyển đổi thời gian cho pivot {pivot['type']}: {str(e)}", DEBUG_LOG_FILE)
-                    continue
+                # Xử lý định dạng ngày DD-MM-YYYY hoặc YYYY-MM-DD
+                date_parts = date_part.split('-')
+                if len(date_parts) == 3:
+                    if int(date_parts[2]) > 1000:  # Năm ở vị trí cuối cùng (DD-MM-YYYY)
+                        vn_date = f"{date_parts[2]}-{date_parts[1]}-{date_parts[0]}"  # Chuyển thành YYYY-MM-DD
+                    else:
+                        vn_date = date_part  # Đã là YYYY-MM-DD
+                else:
+                    vn_date = default_vn_date
+            
+            # Đảm bảo vn_time có định dạng HH:MM
+            if ":" not in time_str:
+                # Nếu time_str chỉ chứa giờ không có phút, thêm ":00"
+                if len(time_str) <= 2:
+                    vn_time = f"{time_str}:00"
+                elif len(time_str) == 4:  # Định dạng 0630 -> 06:30
+                    vn_time = f"{time_str[:2]}:{time_str[2:]}"
+                else:
+                    vn_time = f"{time_str}:00"  # Đảm bảo luôn có định dạng HH:MM
+            else:
+                vn_time = time_str
                 
-            save_log("✅ Đã thêm xong pivot ban đầu", DEBUG_LOG_FILE)
-            return True
+            # Xác định direction dựa vào loại pivot
+            if pivot_type in ["HH", "LH"]:
+                direction = "high"
+            else:  # LL, HL
+                direction = "low"
+                
+            # Trả về pivot đã phân tích
+            result = {
+                "type": pivot_type,
+                "price": price,
+                "vn_time": vn_time,  # Đã đảm bảo định dạng HH:MM
+                "vn_date": vn_date,  # Đã đảm bảo không null
+                "direction": direction,
+                "confirmed": True
+            }
+            
+            print(f"Parsed pivot result: {result}")
+            return result
             
         except Exception as e:
-            save_log(f"❌ Lỗi khi thêm pivot ban đầu: {str(e)}", DEBUG_LOG_FILE)
-            save_log(traceback.format_exc(), DEBUG_LOG_FILE)
-            return False      
+            print(f"Lỗi trong parse_pivot_input: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            return None 
+            
     def add_initial_pivot(self, pivot_data):
         """
         API an toàn để thêm pivot ban đầu, cũng kiểm tra khoảng cách
