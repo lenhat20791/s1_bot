@@ -80,26 +80,12 @@ def set_current_time_and_user(current_time, current_user):
         
         # Set time và user
         pivot_data.current_time = vn_time.strftime('%H:%M')  # Chỉ lấy giờ:phút
-        pivot_data.current_user = current_user
+        pivot_data.user = current_user  # Sửa từ current_user thành user
         
         # Log thông tin
         save_log("\n=== Cập nhật thông tin phiên ===", DEBUG_LOG_FILE)
         save_log(f"UTC time: {utc_dt.strftime('%Y-%m-%d %H:%M:%S')}", DEBUG_LOG_FILE)
-        save_log(f"Vietnam time: {vn_time.strftime('%Y-%m-%d %H:%M:%S')}", DEBUG_LOG_FILE)
-        save_log(f"User: {current_user}", DEBUG_LOG_FILE)
-        return True
-
-    except Exception as e:
-        save_log(f"Error setting time and user: {str(e)}", DEBUG_LOG_FILE)
-        return False
-
-        pivot_data.current_user = current_user
-        
-        # Log chi tiết hơn
-        save_log("\n=== Cập nhật thông tin phiên ===", DEBUG_LOG_FILE)
-        save_log(f"UTC time: {current_time}", DEBUG_LOG_FILE)
-        if 'vn_time' in locals():
-            save_log(f"Vietnam time: {vn_time.strftime('%Y-%m-%d %H:%M:%S (GMT+7)')}", DEBUG_LOG_FILE)
+        save_log(f"Vietnam time: {vn_time.strftime('%Y-%m-%d %H:%M:%S (GMT+7)')}", DEBUG_LOG_FILE)
         save_log(f"Pivot time format: {pivot_data.current_time}", DEBUG_LOG_FILE)
         save_log(f"User: {current_user}", DEBUG_LOG_FILE)
         save_log("="*30, DEBUG_LOG_FILE)
@@ -107,6 +93,7 @@ def set_current_time_and_user(current_time, current_user):
 
     except Exception as e:
         save_log(f"Error setting time and user: {str(e)}", DEBUG_LOG_FILE)
+        save_log(traceback.format_exc(), DEBUG_LOG_FILE)
         return False
                 
 class PivotData:
@@ -1137,9 +1124,9 @@ def start_setpivots(update: Update, context: CallbackContext):
 def process_pivot_ll(update: Update, context: CallbackContext):
     """Xử lý pivot LL"""
     pivot_text = update.message.text
-    pivot_data = parse_pivot_input(pivot_text)
+    new_pivot = parse_pivot_input(pivot_text)  # Đổi từ pivot_data thành new_pivot
     
-    if not pivot_data or pivot_data['type'] != 'LL':
+    if not new_pivot or new_pivot['type'] != 'LL':
         update.message.reply_text(
             "❌ Định dạng không đúng hoặc loại pivot không phải LL!\n"
             "Vui lòng nhập lại theo định dạng: `LL:giá:thời_gian`\n"
@@ -1149,23 +1136,24 @@ def process_pivot_ll(update: Update, context: CallbackContext):
         return WAITING_FOR_PIVOT_LL
         
     # Lưu pivot vào user_data
-    context.user_data['pivots'].append(pivot_data)
+    context.user_data['pivots'].append(new_pivot)
     
     update.message.reply_text(
-        f"✅ Đã lưu pivot LL: ${pivot_data['price']:,.2f} lúc {pivot_data['vn_time']}\n\n"
+        f"✅ Đã lưu pivot LL: ${new_pivot['price']:,.2f} lúc {new_pivot['vn_time']}\n\n"
         "Vui lòng cung cấp thông tin pivot LH theo định dạng:\n"
         "`LH:giá:thời_gian`\n\n"
         "Ví dụ: `LH:82266:09:30`",
         parse_mode=ParseMode.MARKDOWN
     )
+    
     return WAITING_FOR_PIVOT_LH
 
 def process_pivot_lh(update: Update, context: CallbackContext):
     """Xử lý pivot LH"""
     pivot_text = update.message.text
-    pivot_data = parse_pivot_input(pivot_text)
+    new_pivot = parse_pivot_input(pivot_text)
     
-    if not pivot_data or pivot_data['type'] != 'LH':
+    if not new_pivot or new_pivot['type'] != 'LH':
         update.message.reply_text(
             "❌ Định dạng không đúng hoặc loại pivot không phải LH!\n"
             "Vui lòng nhập lại theo định dạng: `LH:giá:thời_gian`\n"
@@ -1175,10 +1163,10 @@ def process_pivot_lh(update: Update, context: CallbackContext):
         return WAITING_FOR_PIVOT_LH
         
     # Lưu pivot vào user_data
-    context.user_data['pivots'].append(pivot_data)
+    context.user_data['pivots'].append(new_pivot)
     
     update.message.reply_text(
-        f"✅ Đã lưu pivot LH: ${pivot_data['price']:,.2f} lúc {pivot_data['vn_time']}\n\n"
+        f"✅ Đã lưu pivot LH: ${new_pivot['price']:,.2f} lúc {new_pivot['vn_time']}\n\n"
         "Vui lòng cung cấp thông tin pivot HL theo định dạng:\n"
         "`HL:giá:thời_gian`\n\n"
         "Ví dụ: `HL:81730:13:30`",
@@ -1189,9 +1177,9 @@ def process_pivot_lh(update: Update, context: CallbackContext):
 def process_pivot_hl(update: Update, context: CallbackContext):
     """Xử lý pivot HL"""
     pivot_text = update.message.text
-    pivot_data = parse_pivot_input(pivot_text)
+    new_pivot = parse_pivot_input(pivot_text)
     
-    if not pivot_data or pivot_data['type'] != 'HL':
+    if not new_pivot or new_pivot['type'] != 'HL':
         update.message.reply_text(
             "❌ Định dạng không đúng hoặc loại pivot không phải HL!\n"
             "Vui lòng nhập lại theo định dạng: `HL:giá:thời_gian`\n"
@@ -1201,10 +1189,10 @@ def process_pivot_hl(update: Update, context: CallbackContext):
         return WAITING_FOR_PIVOT_HL
         
     # Lưu pivot vào user_data
-    context.user_data['pivots'].append(pivot_data)
+    context.user_data['pivots'].append(new_pivot)
     
     update.message.reply_text(
-        f"✅ Đã lưu pivot HL: ${pivot_data['price']:,.2f} lúc {pivot_data['vn_time']}\n\n"
+        f"✅ Đã lưu pivot HL: ${new_pivot['price']:,.2f} lúc {new_pivot['vn_time']}\n\n"
         "Vui lòng cung cấp thông tin pivot HH theo định dạng:\n"
         "`HH:giá:thời_gian`\n\n"
         "Ví dụ: `HH:85270:22:30`",
@@ -1215,9 +1203,9 @@ def process_pivot_hl(update: Update, context: CallbackContext):
 def process_pivot_hh(update: Update, context: CallbackContext):
     """Xử lý pivot HH"""
     pivot_text = update.message.text
-    pivot_data = parse_pivot_input(pivot_text)
+    new_pivot = parse_pivot_input(pivot_text)
     
-    if not pivot_data or pivot_data['type'] != 'HH':
+    if not new_pivot or new_pivot['type'] != 'HH':
         update.message.reply_text(
             "❌ Định dạng không đúng hoặc loại pivot không phải HH!\n"
             "Vui lòng nhập lại theo định dạng: `HH:giá:thời_gian`\n"
@@ -1227,7 +1215,7 @@ def process_pivot_hh(update: Update, context: CallbackContext):
         return WAITING_FOR_PIVOT_HH
         
     # Lưu pivot vào user_data
-    context.user_data['pivots'].append(pivot_data)
+    context.user_data['pivots'].append(new_pivot)
     
     # Lưu tất cả pivot và thêm vào S1
     pivots = context.user_data['pivots']
@@ -1418,6 +1406,13 @@ def status_command(update: Update, context: CallbackContext):
         status_text,
         parse_mode=ParseMode.MARKDOWN
     )
+
+def test_command(update: Update, context: CallbackContext):
+    """Kiểm tra kết nối với Telegram API"""
+    update.message.reply_text(
+        f"✅ S1 Bot đang kết nối!\n"
+        f"⏰ Thời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"👤 User ID: {update.effective_user.id}"
     
 def main():
     """Main entry point to start the bot."""
@@ -1467,6 +1462,7 @@ def main():
         dp.add_handler(setpivots_conv_handler)
         dp.add_handler(CommandHandler('help', help_command))
         dp.add_handler(CommandHandler('status', status_command))
+        dp.add_handler(CommandHandler('test', test_command))
         
         # Thông báo khởi động qua Telegram
         bot = Bot(TOKEN)
