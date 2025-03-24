@@ -1416,52 +1416,71 @@ def test_command(update: Update, context: CallbackContext):
     
 def main():
     try:
+        print("Starting main function...")
         # Thêm thông tin về thời gian khởi động
         start_time = datetime.now(pytz.UTC)
         start_time_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
+        print(f"Start time: {start_time_str}")
         
-        # Kiểm tra các thư mục cần thiết
+        # Kiểm tra config
+        print("Checking configuration...")
+        if not all([TOKEN, BINANCE_API_KEY, BINANCE_API_SECRET, CHAT_ID]):
+            raise Exception("Missing configuration values in config.py")
+            
+        # Kiểm tra thư mục
+        print("Checking directories...")
         for dir_path in ['logs', 'data', 'backup']:
             if not os.path.exists(dir_path):
+                print(f"Creating directory: {dir_path}")
                 os.makedirs(dir_path)
                 
         # Thông báo khởi động
+        print("Initializing bot...")
         save_log("=== S1 Bot khởi động ===", DEBUG_LOG_FILE)
         save_log(f"Môi trường: {ENVIRONMENT}", DEBUG_LOG_FILE)
         save_log(f"Thời gian khởi động: {start_time_str}", DEBUG_LOG_FILE)
         
-        # Xóa các file backup cũ
+        # Xóa backup cũ
+        print("Cleaning old backups...")
         cleanup_old_backups(days=7)
         
-        # Thử khôi phục từ backup trước
+        # Thử khôi phục từ backup
+        print("Attempting to restore from backup...")
         if restore_from_backup():
+            print("Successfully restored from backup")
             save_log("✅ Đã khôi phục dữ liệu từ backup", DEBUG_LOG_FILE)
         else:
-            # Nếu không có backup, load từ initial_pivots.json
+            print("No backup found, loading initial pivots...")
             save_log("⚠️ Không thể khôi phục từ backup, load initial pivots", DEBUG_LOG_FILE)
             initial_pivots = initialize_default_pivots(
                 current_time=start_time_str,
                 current_user="lenhat20791"
             )
             if not initial_pivots:
+                print("Failed to initialize default pivots")
                 save_log("❌ Không thể khởi tạo pivot mặc định", DEBUG_LOG_FILE)
                 return
             pivot_data.add_initial_trading_view_pivots(initial_pivots)
                 
-        # Khởi tạo updater với cài đặt đầy đủ
+        # Khởi tạo updater
+        print("Initializing Telegram updater...")
         updater = Updater(TOKEN, use_context=True, workers=4)
         dp = updater.dispatcher
         dp.handlers.clear()
         
+        # Set up jobs
+        print("Setting up job queue...")
         job_queue = updater.job_queue
-        schedule_next_run(job_queue)  # Đã bao gồm auto backup
+        schedule_next_run(job_queue)
 
-        # Chỉ giữ lại các handler cần thiết 
+        # Add handlers
+        print("Adding command handlers...")
         dp.add_handler(CommandHandler('help', help_command))
         dp.add_handler(CommandHandler('status', status_command))
         dp.add_handler(CommandHandler('test', test_command))
         
-        # Thông báo khởi động qua Telegram
+        # Send startup notification
+        print("Sending startup notification...")
         bot = Bot(TOKEN)
         bot.send_message(
             chat_id=CHAT_ID,
@@ -1474,15 +1493,19 @@ def main():
             parse_mode='Markdown'
         )
         
-        print("S1 Bot is running...")
-        logger.info("Bot started successfully.")
-        
+        print("Starting polling...")
         updater.start_polling(drop_pending_updates=True)
+        print("Bot is running...")
         updater.idle()
         
     except Exception as e:
         error_msg = f"Lỗi trong hàm main: {str(e)}"
+        print(error_msg)
+        print(traceback.format_exc())
         logger.error(error_msg)
         save_log(error_msg, DEBUG_LOG_FILE)
         save_log(traceback.format_exc(), DEBUG_LOG_FILE)
-        send_error_notification(error_msg)
+        try:
+            send_error_notification(error_msg)
+        except:
+            print("Could not send error notification")
