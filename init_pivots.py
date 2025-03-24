@@ -135,14 +135,20 @@ def parse_pivot_input(pivot_text):
         else:  # LL, HL
             direction = "low"
             
-        # Trả về pivot đã phân tích
+        # Thêm log chi tiết về thời gian
+        print(f"Original time string: {time_str}")
+        print(f"Hour: {hour}, Minute: {minute}")
+        print(f"Final vn_time: {vn_time}")
+        
+        # Trả về pivot đã phân tích với giờ:phút chính xác
         result = {
             "type": pivot_type,
             "price": price,
-            "vn_time": vn_time,        # Đã đảm bảo định dạng HH:MM chính xác
-            "vn_date": vn_date,        # Đã đảm bảo format YYYY-MM-DD
+            "vn_time": vn_time,        # Giữ nguyên phút
+            "vn_date": vn_date,        
             "direction": direction,
-            "confirmed": True
+            "confirmed": True,
+            "original_time": time_str   # Thêm trường này để debug
         }
         
         print(f"Parsed pivot result: {result}")
