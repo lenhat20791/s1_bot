@@ -1037,6 +1037,7 @@ class PivotData:
         except Exception as e:
             save_log(f"❌ Lỗi khi tính số nến giữa hai thời điểm: {str(e)}", DEBUG_LOG_FILE)
             return 0 
+            
     def parse_pivot_input(pivot_text):
         """
         Phân tích cú pháp đầu vào để tạo pivot
