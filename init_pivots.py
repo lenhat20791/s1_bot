@@ -53,6 +53,89 @@ def parse_date(date_str):
         # Nếu có lỗi, sử dụng ngày hiện tại
         return datetime.now(pytz.timezone('Asia/Ho_Chi_Minh')).strftime("%Y-%m-%d")
 
+def initialize_default_pivots(current_time=None, current_user=None):
+    """
+    Khởi tạo 4 pivot mặc định từ TradingView với ngày tháng cụ thể cho từng pivot
+    Args:
+        current_time: Thời gian hiện tại ở định dạng "YYYY-MM-DD HH:MM:SS" (UTC)
+        current_user: Tên người dùng hiện tại
+    Returns:
+        list: Danh sách 4 pivot mặc định
+    """
+    try:
+        print(f"Initializing default pivots with UTC time: {current_time}")
+        print(f"Current user: {current_user}")
+        
+        # 4 pivot mặc định từ TradingView - Thời gian đã được chuyển đổi giữa GMT+7 và UTC
+        default_pivots = [
+            {
+                "type": "HH",
+                "price": 85379,
+                "vn_time": "00:00",
+                "vn_date": "2025-03-24",
+                "direction": "high",
+                "confirmed": True,
+                "utc_date": "2025-03-23",  # Ngày UTC (do chuyển từ 00:00 GMT+7)
+                "utc_time": "17:00",       # 00:00 GMT+7 = 17:00 UTC ngày hôm trước
+                "utc_datetime": "2025-03-23 17:00:00",
+                "vn_datetime": "2025-03-24 00:00:00"
+            },
+            {
+                "type": "HL",
+                "price": 84750,
+                "vn_time": "01:00",
+                "vn_date": "2025-03-24",
+                "direction": "low",
+                "confirmed": True,
+                "utc_date": "2025-03-23",  # Ngày UTC (do chuyển từ 01:00 GMT+7)
+                "utc_time": "18:00",       # 01:00 GMT+7 = 18:00 UTC ngày hôm trước
+                "utc_datetime": "2025-03-23 18:00:00",
+                "vn_datetime": "2025-03-24 01:00:00"
+            },
+            {
+                "type": "HH",
+                "price": 86614,
+                "vn_time": "07:30",
+                "vn_date": "2025-03-24",
+                "direction": "high",
+                "confirmed": True,
+                "utc_date": "2025-03-24",
+                "utc_time": "00:30",       # 07:30 GMT+7 = 00:30 UTC
+                "utc_datetime": "2025-03-24 00:30:00",
+                "vn_datetime": "2025-03-24 07:30:00"
+            },
+            {
+                "type": "HL",
+                "price": 85478,
+                "vn_time": "09:00",
+                "vn_date": "2025-03-24",
+                "direction": "low",
+                "confirmed": True,
+                "utc_date": "2025-03-24",
+                "utc_time": "02:00",       # 09:00 GMT+7 = 02:00 UTC
+                "utc_datetime": "2025-03-24 02:00:00",
+                "vn_datetime": "2025-03-24 09:00:00"
+            }
+        ]
+        
+        # Lưu vào file
+        save_initial_pivots(default_pivots)
+        
+        # Log chi tiết
+        print("\n=== Default Pivots Initialized ===")
+        for pivot in default_pivots:
+            print(f"\n{pivot['type']} Pivot:")
+            print(f"Price: ${pivot['price']:,.2f}")
+            print(f"VN Time: {pivot['vn_datetime']} (GMT+7)")
+            print(f"UTC Time: {pivot['utc_datetime']} (UTC)")
+        
+        return default_pivots
+        
+    except Exception as e:
+        print(f"❌ Lỗi khi khởi tạo pivot mặc định: {str(e)}")
+        print(traceback.format_exc())
+        return []
+
 def parse_pivot_input(pivot_text):
     """
     Phân tích cú pháp đầu vào để tạo pivot
