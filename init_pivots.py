@@ -73,7 +73,7 @@ def parse_pivot_input(pivot_text):
         now = datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))
         default_vn_date = now.strftime('%Y-%m-%d')
         
-        # Xử lý định dạng thời gian để đảm bảo có HH:MM
+        # Xử lý phần thời gian và ngày tháng
         if len(parts) == 3:  # Định dạng không có ngày: LL:83597:06:30
             time_str = parts[2]
             vn_date = default_vn_date
@@ -91,18 +91,14 @@ def parse_pivot_input(pivot_text):
             else:
                 vn_date = default_vn_date
         
-        # Đảm bảo vn_time có định dạng HH:MM chính xác
-        if ":" not in time_str:
-            # Nếu time_str chỉ chứa giờ không có phút, thêm ":00"
-            if len(time_str) <= 2:
-                vn_time = f"{time_str.zfill(2)}:00"
-            elif len(time_str) == 4:  # Định dạng 0630 -> 06:30
-                vn_time = f"{time_str[:2]}:{time_str[2:]}"
-            else:
-                vn_time = f"{time_str[:2]}:00"  # Lấy 2 số đầu làm giờ
-        else:
+        # Xử lý time_str để giữ nguyên phút
+        if ":" in time_str:  # Định dạng HH:MM
             hour, minute = time_str.split(':')
-            vn_time = f"{hour.zfill(2)}:{minute.zfill(2)}"  # Đảm bảo đủ 2 chữ số
+            vn_time = f"{hour.zfill(2)}:{minute.zfill(2)}"
+        elif len(time_str) == 4:  # Định dạng HHMM (0630)
+            vn_time = f"{time_str[:2]}:{time_str[2:]}"
+        else:  # Chỉ có giờ
+            vn_time = f"{time_str.zfill(2)}:00"
             
         # Validate thời gian
         try:
@@ -121,19 +117,12 @@ def parse_pivot_input(pivot_text):
         else:  # LL, HL
             direction = "low"
             
-        # Validate ngày tháng
-        try:
-            datetime.strptime(vn_date, '%Y-%m-%d')
-        except ValueError:
-            print(f"Định dạng ngày không hợp lệ: {vn_date}")
-            return None
-            
         # Trả về pivot đã phân tích
         result = {
             "type": pivot_type,
             "price": price,
             "vn_time": vn_time,        # Giữ nguyên phút, không làm tròn
-            "vn_date": vn_date,        # Format YYYY-MM-DD
+            "vn_date": vn_date,        # Đã đảm bảo không null
             "direction": direction,
             "confirmed": True
         }
