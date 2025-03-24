@@ -1110,21 +1110,37 @@ __all__ = ['pivot_data', 'detect_pivot', 'save_log', 'set_current_time_and_user'
 
 def start_setpivots(update: Update, context: CallbackContext):
     """Bắt đầu quá trình thiết lập 4 pivot ban đầu"""
-    context.user_data['pivots'] = []
-    update.message.reply_text(
-        "*Thiết lập 4 pivot ban đầu*\n\n"
-        "Vui lòng cung cấp thông tin pivot LL đầu tiên theo một trong các định dạng:\n"
-        "`LL:giá:thời_gian`\n"
-        "`LL:giá:năm-tháng-ngày:thời_gian`\n"
-        "`LL:giá:ngày-tháng-năm:thời_gian`\n\n"
-        "Ví dụ:\n"
-        "• `LL:79894:00:30` (giá $79,894 lúc 00:30 ngày hiện tại)\n"
-        "• `LL:79894:2025-03-23:00:30` (năm-tháng-ngày)\n"
-        "• `LL:79894:23-03-2025:00:30` (ngày-tháng-năm)\n\n"
-        "_Lưu ý: Sử dụng thời gian theo múi giờ Việt Nam (GMT+7)_",
-        parse_mode=ParseMode.MARKDOWN
-    )
-    return WAITING_FOR_PIVOT_LL
+    try:
+        save_log("\n=== Nhận lệnh /setpivots ===", DEBUG_LOG_FILE)
+        context.user_data['pivots'] = []
+        update.message.reply_text(
+            "*Thiết lập 4 pivot ban đầu*\n\n"
+            "Vui lòng cung cấp thông tin pivot LL đầu tiên theo một trong các định dạng:\n"
+            "`LL:giá:thời_gian`\n"
+            "`LL:giá:năm-tháng-ngày:thời_gian`\n"
+            "`LL:giá:ngày-tháng-năm:thời_gian`\n\n"
+            "Ví dụ:\n"
+            "• `LL:79894:00:30` (giá $79,894 lúc 00:30 ngày hiện tại)\n"
+            "• `LL:79894:2025-03-23:00:30` (năm-tháng-ngày)\n"
+            "• `LL:79894:23-03-2025:00:30` (ngày-tháng-năm)\n\n"
+            "_Lưu ý: Sử dụng thời gian theo múi giờ Việt Nam (GMT+7)_",
+            parse_mode='Markdown'  # Thay thế ParseMode.MARKDOWN bằng 'Markdown'
+        )
+        save_log("✅ Đã gửi hướng dẫn thiết lập pivot", DEBUG_LOG_FILE)
+        return WAITING_FOR_PIVOT_LL
+    except ImportError as e:
+        save_log(f"❌ Lỗi import module: {str(e)}", DEBUG_LOG_FILE)
+        update.message.reply_text(
+            "❌ Lỗi trong quá trình khởi tạo lệnh /setpivots. Vui lòng liên hệ admin."
+        )
+        return ConversationHandler.END
+    except Exception as e:
+        save_log(f"❌ Lỗi không xác định trong start_setpivots: {str(e)}", DEBUG_LOG_FILE)
+        save_log(traceback.format_exc(), DEBUG_LOG_FILE)
+        update.message.reply_text(
+            "❌ Có lỗi xảy ra. Vui lòng thử lại sau hoặc liên hệ admin."
+        )
+        return ConversationHandler.END
 
 def process_pivot_ll(update: Update, context: CallbackContext):
     """Xử lý pivot LL"""
@@ -1143,8 +1159,11 @@ def process_pivot_ll(update: Update, context: CallbackContext):
     # Lưu pivot vào user_data
     context.user_data['pivots'].append(new_pivot)
     
+    # Tạo thông báo với cả thông tin ngày
+    date_info = f"ngày {new_pivot['vn_date']}" if 'vn_date' in new_pivot else ""
+    
     update.message.reply_text(
-        f"✅ Đã lưu pivot LL: ${new_pivot['price']:,.2f} lúc {new_pivot['vn_time']}\n\n"
+        f"✅ Đã lưu pivot LL: ${new_pivot['price']:,.2f} lúc {new_pivot['vn_time']} {date_info}\n\n"
         "Vui lòng cung cấp thông tin pivot LH theo định dạng:\n"
         "`LH:giá:thời_gian`\n\n"
         "Ví dụ: `LH:82266:09:30`",
