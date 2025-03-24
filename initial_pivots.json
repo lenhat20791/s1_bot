@@ -1,0 +1,34 @@
+[
+  {
+    "type": "LL",
+    "price": 83597.0,
+    "vn_time": "06:00",
+    "vn_date": "2025-03-23",
+    "direction": "low",
+    "confirmed": true
+  },
+  {
+    "type": "LH",
+    "price": 84247.0,
+    "vn_time": "09:00",
+    "vn_date": "2025-03-23",
+    "direction": "high",
+    "confirmed": true
+  },
+  {
+    "type": "HL",
+    "price": 85490.0,
+    "vn_time": "09:00",
+    "vn_date": "2025-03-24",
+    "direction": "low",
+    "confirmed": true
+  },
+  {
+    "type": "HH",
+    "price": 86625.0,
+    "vn_time": "07:00",
+    "vn_date": "2025-03-24",
+    "direction": "high",
+    "confirmed": true
+  }
+]
