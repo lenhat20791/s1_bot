@@ -55,89 +55,141 @@ def parse_date(date_str):
 
 def parse_pivot_input(pivot_text):
     """
-    Parse input với format: type:price:date:time
-    Hỗ trợ nhiều format thời gian:
-    - HH:MM (14:30)
-    - HhMM (14h30)
+    Phân tích cú pháp đầu vào để tạo pivot
+    Format hỗ trợ:
+    1. type:price:time - ví dụ: LL:83597:06:30
+    2. type:price:date:time - ví dụ: 
+       - LL:83597:24-03-2025:06:30 (DD-MM-YYYY)
+       - LL:83597:2025-03-24:06:30 (YYYY-MM-DD)
     """
     try:
-        print("\n=== DEBUG LOG ===")
-        print(f"Input: {pivot_text}")
+        print(f"DEBUG - Input text: {pivot_text}")
+        # Loại bỏ khoảng trắng và 'h' trong thời gian nếu có
+        cleaned_text = pivot_text.strip().replace('h', ':')
+        parts = cleaned_text.split(":")
         
-        # 1. Tách và validate input
-        parts = pivot_text.strip().split(':')
-        print(f"Parts: {parts}")
+        print(f"DEBUG - Các phần sau khi tách: {parts}")
         
-        if len(parts) != 4:
-            print(f"❌ Lỗi: Cần 4 phần, nhận được {len(parts)}")
-            return None
-        
-        pivot_type, price_str, date_str, time_str = parts
-        
-        # 2. Xử lý pivot type
-        pivot_type = pivot_type.upper()
-        if pivot_type not in ["LL", "LH", "HL", "HH"]:
-            print(f"❌ Lỗi: Loại pivot không hợp lệ: {pivot_type}")
+        # Validate số lượng phần tử
+        if len(parts) not in [3, 4]:
+            print(f"DEBUG - Số phần tử không hợp lệ: {len(parts)} (cần 3 hoặc 4)")
             return None
             
-        # 3. Xử lý giá
+        # Validate và chuyển đổi loại pivot
+        pivot_type = parts[0].upper()
+        valid_types = ["LL", "LH", "HL", "HH"]
+        if pivot_type not in valid_types:
+            print(f"DEBUG - Loại pivot không hợp lệ: {pivot_type}")
+            return None
+            
+        # Validate và chuyển đổi giá
         try:
-            price = float(price_str)
+            price = float(parts[1])
             if price <= 0:
-                print(f"❌ Lỗi: Giá không hợp lệ: {price}")
+                print(f"DEBUG - Giá không hợp lệ: {price}")
                 return None
         except ValueError:
-            print(f"❌ Lỗi: Không thể chuyển đổi giá: {price_str}")
+            print(f"DEBUG - Không thể chuyển đổi giá: {parts[1]}")
             return None
             
-        # 4. Xử lý ngày
-        try:
-            # Chuẩn hóa format ngày
-            date_str = date_str.replace('/', '-')
-            date_parts = date_str.split('-')
+        # Xử lý ngày tháng và thời gian
+        now = datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))
+        
+        if len(parts) == 3:
+            # Format: type:price:time
+            time_str = parts[2]
+            vn_date = now.strftime('%Y-%m-%d')
+            print(f"DEBUG - Format ngắn, sử dụng ngày hiện tại: {vn_date}")
+        else:
+            # Format: type:price:date:time
+            date_str = parts[2].replace('/', '-')
+            time_str = parts[3]
             
-            if len(date_parts[0]) == 4:  # YYYY-MM-DD
-                year, month, day = map(int, date_parts)
-            else:  # DD-MM-YYYY
-                day, month, year = map(int, date_parts)
+            try:
+                date_parts = date_str.split('-')
+                if len(date_parts) != 3:
+                    print(f"DEBUG - Định dạng ngày không hợp lệ: {date_str}")
+                    return None
+
+                # Xử lý cả hai định dạng YYYY-MM-DD và DD-MM-YYYY
+                if len(date_parts[0]) == 4:  # YYYY-MM-DD
+                    year = int(date_parts[0])
+                    month = int(date_parts[1])
+                    day = int(date_parts[2])
+                else:  # DD-MM-YYYY
+                    year = int(date_parts[2])
+                    month = int(date_parts[1])
+                    day = int(date_parts[0])
                 
-            vn_date = f"{year:04d}-{month:02d}-{day:02d}"
+                # Validate ngày tháng
+                if not (2020 <= year <= 2030):
+                    print(f"DEBUG - Năm không hợp lệ: {year}")
+                    return None
+                if not (1 <= month <= 12):
+                    print(f"DEBUG - Tháng không hợp lệ: {month}")
+                    return None
+                if not (1 <= day <= 31):
+                    print(f"DEBUG - Ngày không hợp lệ: {day}")
+                    return None
+                    
+                # Format lại theo chuẩn YYYY-MM-DD
+                vn_date = f"{year:04d}-{month:02d}-{day:02d}"
+                print(f"DEBUG - Ngày đã xử lý: {vn_date}")
+                
+            except Exception as e:
+                print(f"DEBUG - Lỗi xử lý ngày tháng: {str(e)}")
+                print(traceback.format_exc())
+                return None
             
-            # Validate ngày
-            datetime.strptime(vn_date, '%Y-%m-%d')
-            
-        except Exception as e:
-            print(f"❌ Lỗi xử lý ngày: {str(e)}")
-            return None
-            
-        # 5. Xử lý thời gian - hỗ trợ nhiều format
+        # Xử lý và validate thời gian
         try:
-            # Loại bỏ các ký tự không cần thiết
-            time_str = time_str.lower().replace('h', ':').strip()
-            
-            # Xử lý format HH:MM
+            # Xử lý định dạng thời gian HH:MM
             if ':' in time_str:
                 hour, minute = map(int, time_str.split(':'))
+            elif len(time_str) == 4:  # HHMM
+                hour = int(time_str[:2])
+                minute = int(time_str[2:])
             else:
-                # Format không hợp lệ
-                print(f"❌ Lỗi: Format thời gian không hợp lệ: {time_str}")
+                print(f"DEBUG - Định dạng thời gian không hợp lệ: {time_str}")
                 return None
                 
-            # Validate thời gian
             if not (0 <= hour <= 23 and 0 <= minute <= 59):
-                print(f"❌ Lỗi: Thời gian không hợp lệ: {hour}:{minute}")
+                print(f"DEBUG - Thời gian không hợp lệ: {hour}:{minute}")
                 return None
                 
             vn_time = f"{hour:02d}:{minute:02d}"
+            print(f"DEBUG - Thời gian đã xử lý: {vn_time}")
             
-        except Exception as e:
-            print(f"❌ Lỗi xử lý thời gian: {str(e)}")
+        except ValueError as e:
+            print(f"DEBUG - Không thể xử lý thời gian: {time_str}, lỗi: {str(e)}")
             return None
             
-        # 6. Tạo kết quả
+        # Xác định direction
+        direction = "high" if pivot_type in ["HH", "LH"] else "low"
+        
+        # Tạo và trả về kết quả
         result = {
             "type": pivot_type,
             "price": price,
-            "vn_date": vn_date,
             "vn_time": vn_time,
-            "direction": "high" if pivot
+            "vn_date": vn_date,
+            "direction": direction,
+            "confirmed": True,
+            "original_time": time_str,
+            "debug_info": {
+                "input": pivot_text,
+                "cleaned_input": cleaned_text,
+                "parts": parts,
+                "parsed_hour": hour,
+                "parsed_minute": minute,
+                "parsed_date": vn_date
+            }
+        }
+        
+        print(f"DEBUG - Kết quả cuối cùng: {json.dumps(result, indent=2)}")
+        return result
+        
+    except Exception as e:
+        print(f"DEBUG - Lỗi không xử lý được: {str(e)}")
+        print(traceback.format_exc())
+        return None
