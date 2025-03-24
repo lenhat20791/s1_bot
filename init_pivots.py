@@ -1,4 +1,3 @@
-# init_pivots.py
 import json
 import os
 from datetime import datetime, timedelta
