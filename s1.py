@@ -1250,19 +1250,108 @@ def schedule_next_run(job_queue):
     try:
         # Lấy thời gian hiện tại UTC
         now_utc = datetime.now(pytz.UTC)
-        # Chuyển sang múi giờ Việt Nam
         now_vn = now_utc.astimezone(pytz.timezone('Asia/Ho_Chi_Minh'))
         
-        # lên lịch chạy khi chẵn 30p
-        next_run = now_vn.replace(second=0, microsecond=0) + timedelta(minutes=(30 - now_vn.minute % 30))
-        delay = (next_run - now_vn).total_seconds()
+        # Schedule price check mỗi 30 phút
+        next_price_run = now_vn.replace(second=0, microsecond=0) + timedelta(minutes=(30 - now_vn.minute % 30))
+        price_delay = (next_price_run - now_vn).total_seconds()
         
-        save_log(f"Lên lịch chạy vào {next_run.strftime('%Y-%m-%d %H:%M:%S')} (GMT+7)", DEBUG_LOG_FILE)
-        # Thay đổi interval từ 300 (5 phút) sang 1800 (30 phút)
-        job_queue.run_repeating(get_binance_price, interval=1800, first=delay)
+        save_log(f"Lên lịch price check vào {next_price_run.strftime('%Y-%m-%d %H:%M:%S')} (GMT+7)", DEBUG_LOG_FILE)
+        job_queue.run_repeating(get_binance_price, interval=1800, first=price_delay)
+
+        # Schedule auto backup mỗi 6 giờ (21600 giây)
+        next_backup = now_vn.replace(minute=0, second=0, microsecond=0) + timedelta(hours=(6 - now_vn.hour % 6))
+        backup_delay = (next_backup - now_vn).total_seconds()
+        
+        save_log(f"Lên lịch backup tự động vào {next_backup.strftime('%Y-%m-%d %H:%M:%S')} (GMT+7)", DEBUG_LOG_FILE)
+        job_queue.run_repeating(backup_pivots, interval=21600, first=backup_delay)
+        
     except Exception as e:
         logger.error(f"Error scheduling next run: {e}")
         save_log(f"Error scheduling next run: {e}", DEBUG_LOG_FILE)
+        
+def cleanup_old_backups(days=7):
+    """Xóa các file backup cũ hơn n ngày"""
+    try:
+        backup_dir = "backup"
+        now = datetime.now()
+        deleted_count = 0
+        
+        for file in os.listdir(backup_dir):
+            if file.startswith("pivots_backup_"):
+                file_path = os.path.join(backup_dir, file)
+                file_time = datetime.fromtimestamp(os.path.getctime(file_path))
+                
+                if (now - file_time).days > days:
+                    os.remove(file_path)
+                    deleted_count += 1
+                    save_log(f"Đã xóa file backup cũ: {file}", DEBUG_LOG_FILE)
+        
+        if deleted_count > 0:
+            save_log(f"✅ Đã xóa {deleted_count} file backup cũ hơn {days} ngày", DEBUG_LOG_FILE)
+            
+    except Exception as e:
+        save_log(f"❌ Lỗi khi xóa file backup cũ: {str(e)}", DEBUG_LOG_FILE)
+        save_log(traceback.format_exc(), DEBUG_LOG_FILE)    
+
+def restore_from_backup():
+    """Khôi phục dữ liệu pivot từ file backup gần nhất"""
+    try:
+        backup_dir = "backup"
+        backup_files = [f for f in os.listdir(backup_dir) if f.startswith("pivots_backup_")]
+        
+        if not backup_files:
+            save_log("⚠️ Không tìm thấy file backup", DEBUG_LOG_FILE)
+            return False
+            
+        # Sắp xếp theo thời gian (mới nhất đầu tiên)
+        latest_backup = max(backup_files, key=lambda f: os.path.getctime(os.path.join(backup_dir, f)))
+        backup_path = os.path.join(backup_dir, latest_backup)
+        
+        save_log(f"\n=== Khôi phục dữ liệu từ backup ===", DEBUG_LOG_FILE)
+        save_log(f"File: {latest_backup}", DEBUG_LOG_FILE)
+        
+        # Đọc dữ liệu từ file backup
+        with open(backup_path, 'r', encoding='utf-8') as f:
+            backup_data = json.load(f)
+            
+        # Clear existing pivots
+        pivot_data.clear_all()
+        
+        # Restore từng pivot
+        for pivot in backup_data:
+            restored_pivot = {
+                'type': pivot.get('type', ''),
+                'price': float(pivot['price']),
+                'time': pivot['time'],
+                'direction': pivot['direction'],
+                'confirmed': True,
+                'utc_date': pivot.get('utc_date', ''),
+                'vn_date': pivot.get('vn_date', ''),
+                'vn_datetime': pivot.get('vn_datetime', ''),
+                'skip_spacing_check': True  # Để tránh check khoảng cách khi restore
+            }
+            pivot_data.add_initial_pivot(restored_pivot)
+            
+        save_log(f"✅ Đã khôi phục {len(backup_data)} pivot", DEBUG_LOG_FILE)
+        
+        # Thông báo qua Telegram
+        bot = Bot(TOKEN)
+        bot.send_message(
+            chat_id=CHAT_ID,
+            text=f"✅ *S1 BOT RESTORE*\n\n"
+                 f"Đã khôi phục {len(backup_data)} pivot từ backup!\n"
+                 f"File: `{latest_backup}`\n"
+                 f"Thời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            parse_mode='Markdown'
+        )
+        
+        return True
+        
+    except Exception as e:
+        save_log(f"❌ Lỗi khi khôi phục từ backup: {str(e)}", DEBUG_LOG_FILE)
+        save_log(traceback.format_exc(), DEBUG_LOG_FILE)
+        return False
         
 def help_command(update: Update, context: CallbackContext):
     """Hiển thị trợ giúp cho bot"""
@@ -1326,7 +1415,6 @@ def test_command(update: Update, context: CallbackContext):
     )
     
 def main():
-    """Main entry point to start the bot."""
     try:
         # Thêm thông tin về thời gian khởi động
         start_time = datetime.now(pytz.UTC)
@@ -1342,18 +1430,23 @@ def main():
         save_log(f"Môi trường: {ENVIRONMENT}", DEBUG_LOG_FILE)
         save_log(f"Thời gian khởi động: {start_time_str}", DEBUG_LOG_FILE)
         
-        # Khởi tạo các pivot mặc định với thời gian hiện tại
-        initial_pivots = initialize_default_pivots(
-            current_time=start_time_str,
-            current_user="lenhat20791"
-        )
+        # Xóa các file backup cũ
+        cleanup_old_backups(days=7)
         
-        if not initial_pivots:
-            save_log("❌ Không thể khởi tạo pivot mặc định", DEBUG_LOG_FILE)
-            return
-            
-        # Thêm pivot vào instance PivotData
-        pivot_data.add_initial_trading_view_pivots(initial_pivots)
+        # Thử khôi phục từ backup trước
+        if restore_from_backup():
+            save_log("✅ Đã khôi phục dữ liệu từ backup", DEBUG_LOG_FILE)
+        else:
+            # Nếu không có backup, load từ initial_pivots.json
+            save_log("⚠️ Không thể khôi phục từ backup, load initial pivots", DEBUG_LOG_FILE)
+            initial_pivots = initialize_default_pivots(
+                current_time=start_time_str,
+                current_user="lenhat20791"
+            )
+            if not initial_pivots:
+                save_log("❌ Không thể khởi tạo pivot mặc định", DEBUG_LOG_FILE)
+                return
+            pivot_data.add_initial_trading_view_pivots(initial_pivots)
                 
         # Khởi tạo updater với cài đặt đầy đủ
         updater = Updater(TOKEN, use_context=True, workers=4)
@@ -1361,7 +1454,7 @@ def main():
         dp.handlers.clear()
         
         job_queue = updater.job_queue
-        schedule_next_run(job_queue)
+        schedule_next_run(job_queue)  # Đã bao gồm auto backup
 
         # Chỉ giữ lại các handler cần thiết 
         dp.add_handler(CommandHandler('help', help_command))
@@ -1374,7 +1467,8 @@ def main():
             chat_id=CHAT_ID,
             text=f"🚀 *S1 BOT STARTED*\n\n"
                  f"Bot đã được khởi động thành công!\n"
-                 f"Đã khởi tạo {len(initial_pivots)} pivot mặc định\n"
+                 f"Đã khởi tạo {len(pivot_data.confirmed_pivots)} pivot\n"
+                 f"Auto backup mỗi 6 giờ\n"
                  f"Môi trường: `{ENVIRONMENT}`\n"
                  f"Thời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             parse_mode='Markdown'
@@ -1392,6 +1486,3 @@ def main():
         save_log(error_msg, DEBUG_LOG_FILE)
         save_log(traceback.format_exc(), DEBUG_LOG_FILE)
         send_error_notification(error_msg)
-
-if __name__ == "__main__":
-    main()
