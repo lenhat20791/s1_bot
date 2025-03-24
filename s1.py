@@ -1165,27 +1165,21 @@ def start_setpivots(update: Update, context: CallbackContext):
         context.user_data['pivots'] = []
         update.message.reply_text(
             "*Thiết lập 4 pivot ban đầu*\n\n"
-            "Vui lòng cung cấp thông tin pivot LL đầu tiên theo một trong các định dạng:\n"
-            "`LL:giá:thời_gian`\n"
-            "`LL:giá:năm-tháng-ngày:thời_gian`\n"
-            "`LL:giá:ngày-tháng-năm:thời_gian`\n\n"
+            "Vui lòng cung cấp thông tin pivot LL theo định dạng:\n"
+            "`LL:giá:ngày-tháng-năm:giờ:phút`\n\n"
             "Ví dụ:\n"
-            "• `LL:79894:00:30` (giá $79,894 lúc 00:30 ngày hiện tại)\n"
-            "• `LL:79894:2025-03-23:00:30` (năm-tháng-ngày)\n"
-            "• `LL:79894:23-03-2025:00:30` (ngày-tháng-năm)\n\n"
-            "_Lưu ý: Sử dụng thời gian theo múi giờ Việt Nam (GMT+7)_",
-            parse_mode='Markdown'  # Thay thế ParseMode.MARKDOWN bằng 'Markdown'
+            "• `LL:79894:24-03-2025:00:30`\n"
+            "• `LL:79894:2025-03-24:00:30`\n\n"
+            "_Lưu ý:_\n"
+            "• Thời gian theo múi giờ Việt Nam (GMT+7)\n"
+            "• Ngày tháng có thể theo định dạng DD-MM-YYYY hoặc YYYY-MM-DD\n"
+            "• Bắt buộc nhập đủ 4 phần: loại pivot, giá, ngày và giờ",
+            parse_mode='Markdown'
         )
         save_log("✅ Đã gửi hướng dẫn thiết lập pivot", DEBUG_LOG_FILE)
         return WAITING_FOR_PIVOT_LL
-    except ImportError as e:
-        save_log(f"❌ Lỗi import module: {str(e)}", DEBUG_LOG_FILE)
-        update.message.reply_text(
-            "❌ Lỗi trong quá trình khởi tạo lệnh /setpivots. Vui lòng liên hệ admin."
-        )
-        return ConversationHandler.END
     except Exception as e:
-        save_log(f"❌ Lỗi không xác định trong start_setpivots: {str(e)}", DEBUG_LOG_FILE)
+        save_log(f"❌ Lỗi trong start_setpivots: {str(e)}", DEBUG_LOG_FILE)
         save_log(traceback.format_exc(), DEBUG_LOG_FILE)
         update.message.reply_text(
             "❌ Có lỗi xảy ra. Vui lòng thử lại sau hoặc liên hệ admin."
@@ -1222,7 +1216,7 @@ def process_pivot_ll(update: Update, context: CallbackContext):
         # Parse input pivot
         try:
             new_pivot = parse_pivot_input(cleaned_pivot_text)
-            save_log(f"Kết quả parse pivot: {str(new_pivot)}", DEBUG_LOG_FILE)
+            save_log(f"Kết quả parse pivot: {json.dumps(new_pivot, indent=2)}", DEBUG_LOG_FILE)
         except Exception as parse_error:
             save_log(f"❌ Lỗi khi parse pivot: {str(parse_error)}", DEBUG_LOG_FILE)
             save_log(traceback.format_exc(), DEBUG_LOG_FILE)
