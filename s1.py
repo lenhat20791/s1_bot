@@ -21,7 +21,7 @@ from openpyxl.chart.axis import DateAxis
 from openpyxl.chart.marker import Marker
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
-from init_pivots import parse_pivot_input, save_initial_pivots
+from init_pivots import parse_pivot_input, save_initial_pivots, initialize_default_pivots  # Thêm import
 
 # Define conversation states
 WAITING_FOR_PIVOT_LL = 1
@@ -1158,328 +1158,7 @@ pivot_data = PivotData()
 # Cuối file s1.py thêm dòng này
 __all__ = ['pivot_data', 'detect_pivot', 'save_log', 'set_current_time_and_user']
 
-def start_setpivots(update: Update, context: CallbackContext):
-    """Bắt đầu quá trình thiết lập 4 pivot ban đầu"""
-    try:
-        save_log("\n=== Nhận lệnh /setpivots ===", DEBUG_LOG_FILE)
-        context.user_data['pivots'] = []
-        update.message.reply_text(
-            "*Thiết lập 4 pivot ban đầu*\n\n"
-            "Vui lòng cung cấp thông tin pivot LL theo định dạng:\n"
-            "`LL:giá:ngày-tháng-năm:giờ:phút`\n\n"
-            "Ví dụ:\n"
-            "• `LL:79894:24-03-2025:00:30`\n"
-            "• `LL:79894:2025-03-24:00:30`\n\n"
-            "_Lưu ý:_\n"
-            "• Thời gian theo múi giờ Việt Nam (GMT+7)\n"
-            "• Ngày tháng có thể theo định dạng DD-MM-YYYY hoặc YYYY-MM-DD\n"
-            "• Bắt buộc nhập đủ 4 phần: loại pivot, giá, ngày và giờ",
-            parse_mode='Markdown'
-        )
-        save_log("✅ Đã gửi hướng dẫn thiết lập pivot", DEBUG_LOG_FILE)
-        return WAITING_FOR_PIVOT_LL
-    except Exception as e:
-        save_log(f"❌ Lỗi trong start_setpivots: {str(e)}", DEBUG_LOG_FILE)
-        save_log(traceback.format_exc(), DEBUG_LOG_FILE)
-        update.message.reply_text(
-            "❌ Có lỗi xảy ra. Vui lòng thử lại sau hoặc liên hệ admin."
-        )
-        return ConversationHandler.END
 
-def process_pivot_ll(update: Update, context: CallbackContext):
-    """Xử lý pivot LL"""
-    try:
-        pivot_text = update.message.text
-        save_log(f"\n=== PROCESSING PIVOT LL ===", DEBUG_LOG_FILE)
-        save_log(f"Input gốc: {pivot_text}", DEBUG_LOG_FILE)
-        
-        # Làm sạch đầu vào
-        cleaned_pivot_text = pivot_text.strip()
-        if cleaned_pivot_text.endswith(')'):
-            cleaned_pivot_text = cleaned_pivot_text.rstrip(')')
-            save_log(f"Đã loại bỏ dấu ngoặc đóng: {cleaned_pivot_text}", DEBUG_LOG_FILE)
-        if cleaned_pivot_text.startswith('('):
-            cleaned_pivot_text = cleaned_pivot_text.lstrip('(')
-            save_log(f"Đã loại bỏ dấu ngoặc mở: {cleaned_pivot_text}", DEBUG_LOG_FILE)
-            
-        # Kiểm tra định dạng cơ bản trước khi gọi parse_pivot_input
-        if not cleaned_pivot_text or ":" not in cleaned_pivot_text:
-            save_log(f"❌ Định dạng đầu vào không hợp lệ: {pivot_text}", DEBUG_LOG_FILE)
-            update.message.reply_text(
-                "❌ Định dạng không đúng!\n"
-                "Vui lòng nhập theo định dạng: `LL:giá:thời_gian` hoặc `LL:giá:ngày:thời_gian`\n"
-                "Ví dụ: `LL:79894:00:30` hoặc `LL:79894:23-03-2025:06:30`",
-                parse_mode='Markdown'
-            )
-            return WAITING_FOR_PIVOT_LL
-            
-        # Parse input pivot
-        try:
-            new_pivot = parse_pivot_input(cleaned_pivot_text)
-            save_log(f"Kết quả parse pivot: {json.dumps(new_pivot, indent=2)}", DEBUG_LOG_FILE)
-        except Exception as parse_error:
-            save_log(f"❌ Lỗi khi parse pivot: {str(parse_error)}", DEBUG_LOG_FILE)
-            save_log(traceback.format_exc(), DEBUG_LOG_FILE)
-            update.message.reply_text(
-                "❌ Có lỗi khi xử lý định dạng pivot.\n"
-                "Vui lòng thử lại với định dạng:\n"
-                "• `LL:giá:giờ:phút` (ví dụ: LL:83597:06:30)\n"
-                "• `LL:giá:ngày-tháng-năm:giờ:phút` (ví dụ: LL:83597:23-03-2025:06:30)",
-                parse_mode='Markdown'
-            )
-            return WAITING_FOR_PIVOT_LL
-        
-        # Kiểm tra kết quả parse
-        if not new_pivot:
-            save_log("❌ Kết quả parse_pivot_input là None", DEBUG_LOG_FILE)
-            update.message.reply_text(
-                "❌ Không thể xử lý định dạng đầu vào.\n"
-                "Vui lòng nhập theo một trong các định dạng sau:\n"
-                "• `LL:giá:giờ:phút` (ví dụ: LL:83597:06:30)\n"
-                "• `LL:giá:ngày-tháng-năm:giờ:phút` (ví dụ: LL:83597:23-03-2025:06:30)",
-                parse_mode='Markdown'
-            )
-            return WAITING_FOR_PIVOT_LL
-            
-        # Kiểm tra loại pivot
-        if new_pivot['type'] != 'LL':
-            save_log(f"❌ Loại pivot không phải LL: {new_pivot['type']}", DEBUG_LOG_FILE)
-            update.message.reply_text(
-                f"❌ Loại pivot phải là LL, nhưng nhận được {new_pivot['type']}.\n"
-                "Vui lòng nhập lại với định dạng bắt đầu bằng LL:\n"
-                "Ví dụ: `LL:79894:00:30`",
-                parse_mode='Markdown'
-            )
-            return WAITING_FOR_PIVOT_LL
-            
-        # Đến đây tức là pivot đã hợp lệ, lưu vào user_data
-        if 'pivots' not in context.user_data:
-            context.user_data['pivots'] = []
-            
-        context.user_data['pivots'].append(new_pivot)
-        save_log(f"✅ Đã thêm pivot LL vào user_data", DEBUG_LOG_FILE)
-        
-        # Chuẩn bị thông báo thành công
-        price_formatted = f"${new_pivot['price']:,.2f}"
-        time_info = new_pivot.get('vn_time', '00:00')
-        date_info = f" ngày {new_pivot['vn_date']}" if 'vn_date' in new_pivot and new_pivot['vn_date'] else ""
-        
-        save_log(f"Thông tin pivot đã lưu: Giá {price_formatted}, thời gian {time_info}{date_info}", DEBUG_LOG_FILE)
-        
-        # Gửi thông báo thành công
-        update.message.reply_text(
-            f"✅ Đã lưu pivot LL: {price_formatted} lúc {time_info}{date_info}\n\n"
-            "Vui lòng cung cấp thông tin pivot LH theo định dạng:\n"
-            "`LH:giá:thời_gian`\n\n"
-            "Ví dụ: `LH:82266:09:30`",
-            parse_mode='Markdown'
-        )
-        
-        return WAITING_FOR_PIVOT_LH
-        
-    except Exception as e:
-        save_log(f"❌ Lỗi không xác định trong process_pivot_ll: {str(e)}", DEBUG_LOG_FILE)
-        save_log(traceback.format_exc(), DEBUG_LOG_FILE)
-        
-        try:
-            update.message.reply_text(
-                "❌ Đã xảy ra lỗi không mong muốn. Vui lòng thử lại hoặc liên hệ admin.",
-                parse_mode='Markdown'
-            )
-        except:
-            pass
-            
-        return WAITING_FOR_PIVOT_LL
-
-def process_pivot_lh(update: Update, context: CallbackContext):
-    """Xử lý pivot LH"""
-    try:
-        pivot_text = update.message.text
-        save_log(f"Đang xử lý input pivot LH: {pivot_text}", DEBUG_LOG_FILE)
-        
-        try:
-            new_pivot = parse_pivot_input(pivot_text)
-            save_log(f"Kết quả parse pivot: {new_pivot}", DEBUG_LOG_FILE)
-        except Exception as parse_error:
-            save_log(f"❌ Lỗi khi parse pivot: {str(parse_error)}", DEBUG_LOG_FILE)
-            save_log(traceback.format_exc(), DEBUG_LOG_FILE)
-            update.message.reply_text(
-                "❌ Có lỗi khi xử lý định dạng pivot. Vui lòng thử lại với định dạng đơn giản hơn.\n"
-                "Ví dụ: `LH:82266:09:30`",
-                parse_mode='Markdown'
-            )
-            return WAITING_FOR_PIVOT_LH
-        
-        if not new_pivot or new_pivot['type'] != 'LH':
-            update.message.reply_text(
-                "❌ Định dạng không đúng hoặc loại pivot không phải LH!\n"
-                "Vui lòng nhập lại theo định dạng: `LH:giá:thời_gian`\n"
-                "Ví dụ: `LH:82266:09:30`",
-                parse_mode='Markdown'
-            )
-            return WAITING_FOR_PIVOT_LH
-            
-        # Lưu pivot vào user_data
-        context.user_data['pivots'].append(new_pivot)
-        
-        # Hiển thị thời gian CHÍNH XÁC bao gồm cả phút
-        date_info = f" ngày {new_pivot['vn_date']}" if 'vn_date' in new_pivot else ""
-        
-        update.message.reply_text(
-            f"✅ Đã lưu pivot LH: ${new_pivot['price']:,.2f} lúc {new_pivot['vn_time']}{date_info}\n\n"
-            "Vui lòng cung cấp thông tin pivot HL theo định dạng:\n"
-            "`HL:giá:thời_gian`\n\n"
-            "Ví dụ: `HL:81730:13:30`",
-            parse_mode='Markdown'
-        )
-        
-        return WAITING_FOR_PIVOT_HL
-        
-    except Exception as e:
-        save_log(f"❌ Lỗi trong process_pivot_lh: {str(e)}", DEBUG_LOG_FILE)
-        save_log(traceback.format_exc(), DEBUG_LOG_FILE)
-        try:
-            update.message.reply_text(
-                "❌ Có lỗi xảy ra khi xử lý pivot LH. Vui lòng thử lại sau.",
-                parse_mode='Markdown'
-            )
-        except:
-            pass
-        return WAITING_FOR_PIVOT_LH
-
-def process_pivot_hl(update: Update, context: CallbackContext):
-    """Xử lý pivot HL"""
-    try:
-        pivot_text = update.message.text
-        save_log(f"Đang xử lý input pivot HL: {pivot_text}", DEBUG_LOG_FILE)
-        
-        try:
-            new_pivot = parse_pivot_input(pivot_text)
-            save_log(f"Kết quả parse pivot: {new_pivot}", DEBUG_LOG_FILE)
-        except Exception as parse_error:
-            save_log(f"❌ Lỗi khi parse pivot: {str(parse_error)}", DEBUG_LOG_FILE)
-            save_log(traceback.format_exc(), DEBUG_LOG_FILE)
-            update.message.reply_text(
-                "❌ Có lỗi khi xử lý định dạng pivot. Vui lòng thử lại với định dạng đơn giản hơn.\n"
-                "Ví dụ: `HL:81730:13:30`",
-                parse_mode='Markdown'
-            )
-            return WAITING_FOR_PIVOT_HL
-        
-        if not new_pivot or new_pivot['type'] != 'HL':
-            update.message.reply_text(
-                "❌ Định dạng không đúng hoặc loại pivot không phải HL!\n"
-                "Vui lòng nhập lại theo định dạng: `HL:giá:thời_gian`\n"
-                "Ví dụ: `HL:81730:13:30`",
-                parse_mode='Markdown'
-            )
-            return WAITING_FOR_PIVOT_HL
-            
-        # Lưu pivot vào user_data
-        context.user_data['pivots'].append(new_pivot)
-        
-        # Hiển thị thời gian CHÍNH XÁC bao gồm cả phút
-        date_info = f" ngày {new_pivot['vn_date']}" if 'vn_date' in new_pivot else ""
-        
-        update.message.reply_text(
-            f"✅ Đã lưu pivot HL: ${new_pivot['price']:,.2f} lúc {new_pivot['vn_time']}{date_info}\n\n"
-            "Vui lòng cung cấp thông tin pivot HH theo định dạng:\n"
-            "`HH:giá:thời_gian`\n\n"
-            "Ví dụ: `HH:85270:22:30`",
-            parse_mode='Markdown'
-        )
-        
-        return WAITING_FOR_PIVOT_HH
-        
-    except Exception as e:
-        save_log(f"❌ Lỗi trong process_pivot_hl: {str(e)}", DEBUG_LOG_FILE)
-        save_log(traceback.format_exc(), DEBUG_LOG_FILE)
-        try:
-            update.message.reply_text(
-                "❌ Có lỗi xảy ra khi xử lý pivot HL. Vui lòng thử lại sau.",
-                parse_mode='Markdown'
-            )
-        except:
-            pass
-        return WAITING_FOR_PIVOT_HL
-
-def process_pivot_hh(update: Update, context: CallbackContext):
-    """Xử lý pivot HH"""
-    try:
-        pivot_text = update.message.text
-        save_log(f"Đang xử lý input pivot HH: {pivot_text}", DEBUG_LOG_FILE)
-        
-        try:
-            new_pivot = parse_pivot_input(pivot_text)
-            save_log(f"Kết quả parse pivot: {new_pivot}", DEBUG_LOG_FILE)
-        except Exception as parse_error:
-            save_log(f"❌ Lỗi khi parse pivot: {str(parse_error)}", DEBUG_LOG_FILE)
-            save_log(traceback.format_exc(), DEBUG_LOG_FILE)
-            update.message.reply_text(
-                "❌ Có lỗi khi xử lý định dạng pivot. Vui lòng thử lại với định dạng đơn giản hơn.\n"
-                "Ví dụ: `HH:85270:22:30`",
-                parse_mode='Markdown'
-            )
-            return WAITING_FOR_PIVOT_HH
-        
-        if not new_pivot or new_pivot['type'] != 'HH':
-            update.message.reply_text(
-                "❌ Định dạng không đúng hoặc loại pivot không phải HH!\n"
-                "Vui lòng nhập lại theo định dạng: `HH:giá:thời_gian`\n"
-                "Ví dụ: `HH:85270:22:30`",
-                parse_mode='Markdown'
-            )
-            return WAITING_FOR_PIVOT_HH
-            
-        # Lưu pivot vào user_data
-        context.user_data['pivots'].append(new_pivot)
-        
-        # Lưu tất cả pivot và thêm vào S1
-        pivots = context.user_data['pivots']
-        
-        # Lưu vào file để có thể sử dụng lại sau này
-        save_initial_pivots(pivots)
-        
-        # Thêm pivot vào instance PivotData
-        import sys
-        current_module = sys.modules[__name__]
-        current_module.pivot_data.add_initial_trading_view_pivots(pivots)
-        
-        # Tạo thông tin pivot với ngày và giờ chính xác
-        pivot_info = "\n".join([
-            f"• {p['type']}: ${p['price']:,.2f} ({p['vn_time']}" + 
-            (f" ngày {p['vn_date']}" if 'vn_date' in p else "") + ")"
-            for p in pivots
-        ])
-        
-        update.message.reply_text(
-            f"✅ *Đã thiết lập thành công 4 pivot ban đầu!*\n\n"
-            f"{pivot_info}\n\n"
-            f"S1 Bot đã sẵn sàng phát hiện các pivot mới.",
-            parse_mode='Markdown'
-        )
-        
-        return ConversationHandler.END
-        
-    except Exception as e:
-        save_log(f"❌ Lỗi trong process_pivot_hh: {str(e)}", DEBUG_LOG_FILE)
-        save_log(traceback.format_exc(), DEBUG_LOG_FILE)
-        try:
-            update.message.reply_text(
-                "❌ Có lỗi xảy ra khi xử lý pivot HH. Vui lòng thử lại sau.",
-                parse_mode='Markdown'
-            )
-        except:
-            pass
-        return WAITING_FOR_PIVOT_HH
-
-def cancel_setpivots(update: Update, context: CallbackContext):
-    """Hủy quá trình thiết lập pivot"""
-    update.message.reply_text(
-        "❌ Đã hủy quá trình thiết lập pivot ban đầu."
-    )
-    return ConversationHandler.END
-    
 def backup_pivots():
     """Sao lưu dữ liệu pivot định kỳ"""
     try:
@@ -1650,7 +1329,7 @@ def main():
     """Main entry point to start the bot."""
     try:
         # Thêm thông tin về thời gian khởi động
-        start_time = datetime.now()
+        start_time = datetime.now(pytz.UTC)
         start_time_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
         
         # Kiểm tra các thư mục cần thiết
@@ -1662,41 +1341,29 @@ def main():
         save_log("=== S1 Bot khởi động ===", DEBUG_LOG_FILE)
         save_log(f"Môi trường: {ENVIRONMENT}", DEBUG_LOG_FILE)
         save_log(f"Thời gian khởi động: {start_time_str}", DEBUG_LOG_FILE)
+        
+        # Khởi tạo các pivot mặc định với thời gian hiện tại
+        initial_pivots = initialize_default_pivots(
+            current_time=start_time_str,
+            current_user="lenhat20791"
+        )
+        
+        if not initial_pivots:
+            save_log("❌ Không thể khởi tạo pivot mặc định", DEBUG_LOG_FILE)
+            return
+            
+        # Thêm pivot vào instance PivotData
+        pivot_data.add_initial_trading_view_pivots(initial_pivots)
                 
         # Khởi tạo updater với cài đặt đầy đủ
-        updater = Updater(TOKEN, use_context=True, workers=4)  # Tăng số workers
+        updater = Updater(TOKEN, use_context=True, workers=4)
         dp = updater.dispatcher
-        
-        # Xóa mọi handler đã đăng ký trước đó (tránh đăng ký nhiều lần)
         dp.handlers.clear()
         
         job_queue = updater.job_queue
-        schedule_next_run(job_queue)  # Schedule first run
+        schedule_next_run(job_queue)
 
-        # Set up conversation handler for setting initial pivots
-        setpivots_conv_handler = ConversationHandler(
-            entry_points=[CommandHandler('setpivots', start_setpivots)],
-            states={
-                WAITING_FOR_PIVOT_LL: [
-                    MessageHandler(Filters.text & ~Filters.command, process_pivot_ll)
-                ],
-                WAITING_FOR_PIVOT_LH: [
-                    MessageHandler(Filters.text & ~Filters.command, process_pivot_lh)
-                ],
-                WAITING_FOR_PIVOT_HL: [
-                    MessageHandler(Filters.text & ~Filters.command, process_pivot_hl)
-                ],
-                WAITING_FOR_PIVOT_HH: [
-                    MessageHandler(Filters.text & ~Filters.command, process_pivot_hh)
-                ]
-            },
-            fallbacks=[CommandHandler('cancel', cancel_setpivots)],
-            name="setpivots_conversation",  # Thêm tên để dễ debug
-            allow_reentry=True
-        )
-
-        # Add handlers to dispatcher
-        dp.add_handler(setpivots_conv_handler)
+        # Chỉ giữ lại các handler cần thiết 
         dp.add_handler(CommandHandler('help', help_command))
         dp.add_handler(CommandHandler('status', status_command))
         dp.add_handler(CommandHandler('test', test_command))
@@ -1705,18 +1372,20 @@ def main():
         bot = Bot(TOKEN)
         bot.send_message(
             chat_id=CHAT_ID,
-            text=f"🚀 *S1 BOT STARTED*\n\nBot đã được khởi động thành công!\nMôi trường: `{ENVIRONMENT}`\nThời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            text=f"🚀 *S1 BOT STARTED*\n\n"
+                 f"Bot đã được khởi động thành công!\n"
+                 f"Đã khởi tạo {len(initial_pivots)} pivot mặc định\n"
+                 f"Môi trường: `{ENVIRONMENT}`\n"
+                 f"Thời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             parse_mode='Markdown'
         )
         
         print("S1 Bot is running...")
         logger.info("Bot started successfully.")
         
-        # Khởi động bot với tùy chọn loại bỏ cập nhật đang chờ
-        # LỖI: Không thể sử dụng cả clean=True và drop_pending_updates=True
-        # Chỉ sử dụng một trong hai tùy chọn
-        updater.start_polling(drop_pending_updates=True)  # Chỉ giữ drop_pending_updates
+        updater.start_polling(drop_pending_updates=True)
         updater.idle()
+        
     except Exception as e:
         error_msg = f"Lỗi trong hàm main: {str(e)}"
         logger.error(error_msg)
