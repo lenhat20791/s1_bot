@@ -77,7 +77,7 @@ def parse_pivot_input(pivot_text):
         if len(parts) == 3:  # Định dạng không có ngày: LL:83597:06:30
             time_str = parts[2]
             vn_date = default_vn_date
-        else:  # Có ngày: LL:83597:23-03-2025:06:30
+        else:  # Có ngày: LL:83597:23-03-2025:06:30 hoặc LL:83597:23/03/2025:06:30
             date_part = parts[2].replace('/', '-')  # Chuẩn hóa dấu phân cách
             time_str = parts[3]
             
@@ -93,6 +93,7 @@ def parse_pivot_input(pivot_text):
         
         # Đảm bảo vn_time có định dạng HH:MM chính xác
         if ":" not in time_str:
+            # Nếu time_str chỉ chứa giờ không có phút, thêm ":00"
             if len(time_str) <= 2:
                 vn_time = f"{time_str.zfill(2)}:00"
             elif len(time_str) == 4:  # Định dạng 0630 -> 06:30
@@ -101,16 +102,16 @@ def parse_pivot_input(pivot_text):
                 vn_time = f"{time_str[:2]}:00"  # Lấy 2 số đầu làm giờ
         else:
             hour, minute = time_str.split(':')
-            vn_time = f"{hour.zfill(2)}:{minute.zfill(2)}"  # Giữ nguyên phút
+            vn_time = f"{hour.zfill(2)}:{minute.zfill(2)}"  # Đảm bảo đủ 2 chữ số
             
         # Validate thời gian
         try:
             hour = int(vn_time.split(':')[0])
             minute = int(vn_time.split(':')[1])
-            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            if hour < 0 or hour > 23 or minute < 0 or minute > 59:
                 print(f"Thời gian không hợp lệ: {vn_time}")
                 return None
-        except ValueError:
+        except:
             print(f"Định dạng thời gian không hợp lệ: {vn_time}")
             return None
             
@@ -120,12 +121,19 @@ def parse_pivot_input(pivot_text):
         else:  # LL, HL
             direction = "low"
             
+        # Validate ngày tháng
+        try:
+            datetime.strptime(vn_date, '%Y-%m-%d')
+        except ValueError:
+            print(f"Định dạng ngày không hợp lệ: {vn_date}")
+            return None
+            
         # Trả về pivot đã phân tích
         result = {
             "type": pivot_type,
             "price": price,
-            "vn_time": vn_time,  # Giữ nguyên phút
-            "vn_date": vn_date,  # Đã đảm bảo không null
+            "vn_time": vn_time,        # Giữ nguyên phút, không làm tròn
+            "vn_date": vn_date,        # Format YYYY-MM-DD
             "direction": direction,
             "confirmed": True
         }
