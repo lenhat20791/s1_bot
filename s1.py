@@ -1141,6 +1141,8 @@ class PivotData:
         """
         try:
             save_log("\n=== Thêm các pivot ban đầu ===", DEBUG_LOG_FILE)
+            save_log(f"Thời gian hiện tại UTC: {datetime.now(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S')}", DEBUG_LOG_FILE)
+            save_log(f"Thời gian hiện tại VN: {datetime.now(pytz.timezone('Asia/Ho_Chi_Minh')).strftime('%Y-%m-%d %H:%M:%S')}", DEBUG_LOG_FILE)
             save_log(f"Số lượng pivot: {len(pivots)}", DEBUG_LOG_FILE)
             
             # Kiểm tra số lượng pivot
@@ -1161,12 +1163,27 @@ class PivotData:
             
             for pivot in pivots:
                 try:
+                    # Log chi tiết input
+                    save_log(f"\nXử lý pivot {pivot['type']}:", DEBUG_LOG_FILE)
+                    save_log(f"Input data: {json.dumps(pivot, ensure_ascii=False)}", DEBUG_LOG_FILE)
+                    
                     # Chuyển đổi thời gian VN sang UTC
-                    vn_dt_str = f"{pivot['vn_date']} {pivot['vn_time']}"
-                    vn_dt = datetime.strptime(vn_dt_str, '%Y-%m-%d %H:%M')
-                    vn_tz = pytz.timezone('Asia/Ho_Chi_Minh')
-                    vn_dt = vn_tz.localize(vn_dt)
-                    utc_dt = vn_dt.astimezone(pytz.UTC)
+                    vn_dt_str = f"{pivot['vn_date']} {pivot['vn_time']}"  # e.g. "2025-03-24 06:30"
+                    save_log(f"VN datetime string: {vn_dt_str}", DEBUG_LOG_FILE)
+                    
+                    try:
+                        # Parse datetime string
+                        vn_dt = datetime.strptime(vn_dt_str, '%Y-%m-%d %H:%M')
+                        # Localize to VN timezone
+                        vn_tz = pytz.timezone('Asia/Ho_Chi_Minh')
+                        vn_dt = vn_tz.localize(vn_dt)
+                        # Convert to UTC
+                        utc_dt = vn_dt.astimezone(pytz.UTC)
+                        
+                        save_log(f"Converted UTC time: {utc_dt.strftime('%Y-%m-%d %H:%M')}", DEBUG_LOG_FILE)
+                    except ValueError as dt_error:
+                        save_log(f"❌ Lỗi định dạng datetime: {str(dt_error)}", DEBUG_LOG_FILE)
+                        return False
                     
                     # Tạo pivot mới với đầy đủ thông tin thời gian
                     new_pivot = {
@@ -1174,19 +1191,17 @@ class PivotData:
                         'price': float(pivot['price']),
                         'direction': pivot['direction'],
                         'confirmed': True,
-                        'time': utc_dt.strftime('%H:%M'),  # Giờ UTC cho pivot
-                        'utc_date': utc_dt.strftime('%Y-%m-%d'),
+                        'time': utc_dt.strftime('%H:%M'),         # Giờ UTC cho pivot
+                        'utc_date': utc_dt.strftime('%Y-%m-%d'),  # Ngày UTC
                         'utc_datetime': utc_dt.strftime('%Y-%m-%d %H:%M'),
-                        'vn_date': pivot['vn_date'],
-                        'vn_time': pivot['vn_time'],
-                        'vn_datetime': vn_dt_str,
-                        'skip_spacing_check': True  # Bỏ qua kiểm tra khoảng cách cho pivot ban đầu
+                        'vn_date': pivot['vn_date'],              # Giữ nguyên ngày VN gốc
+                        'vn_time': pivot['vn_time'],              # Giữ nguyên giờ VN gốc
+                        'vn_datetime': vn_dt_str,                 # Datetime VN đầy đủ
+                        'skip_spacing_check': True                 # Bỏ qua kiểm tra khoảng cách cho pivot ban đầu
                     }
                     
-                    save_log(f"\nThêm pivot {pivot['type']}:", DEBUG_LOG_FILE)
-                    save_log(f"Giá: ${pivot['price']:,.2f}", DEBUG_LOG_FILE)
-                    save_log(f"Thời gian VN: {new_pivot['vn_datetime']}", DEBUG_LOG_FILE)
-                    save_log(f"Thời gian UTC: {new_pivot['utc_datetime']}", DEBUG_LOG_FILE)
+                    save_log("Prepared pivot data:", DEBUG_LOG_FILE)
+                    save_log(json.dumps(new_pivot, ensure_ascii=False, indent=2), DEBUG_LOG_FILE)
                     
                     # Thêm vào danh sách pivot
                     if self._add_confirmed_pivot(new_pivot):
@@ -1212,7 +1227,7 @@ class PivotData:
             save_log(f"❌ Lỗi khi thêm pivot ban đầu: {str(e)}", DEBUG_LOG_FILE)
             save_log(traceback.format_exc(), DEBUG_LOG_FILE)
             return False
-    
+        
 # Create global instance
 pivot_data = PivotData() 
 
