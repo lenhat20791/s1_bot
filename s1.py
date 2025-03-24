@@ -1113,9 +1113,14 @@ def start_setpivots(update: Update, context: CallbackContext):
     context.user_data['pivots'] = []
     update.message.reply_text(
         "*Thiết lập 4 pivot ban đầu*\n\n"
-        "Vui lòng cung cấp thông tin pivot LL đầu tiên theo định dạng:\n"
-        "`LL:giá:thời_gian`\n\n"
-        "Ví dụ: `LL:79894:00:30` (giá $79,894 lúc 00:30)\n\n"
+        "Vui lòng cung cấp thông tin pivot LL đầu tiên theo một trong các định dạng:\n"
+        "`LL:giá:thời_gian`\n"
+        "`LL:giá:năm-tháng-ngày:thời_gian`\n"
+        "`LL:giá:ngày-tháng-năm:thời_gian`\n\n"
+        "Ví dụ:\n"
+        "• `LL:79894:00:30` (giá $79,894 lúc 00:30 ngày hiện tại)\n"
+        "• `LL:79894:2025-03-23:00:30` (năm-tháng-ngày)\n"
+        "• `LL:79894:23-03-2025:00:30` (ngày-tháng-năm)\n\n"
         "_Lưu ý: Sử dụng thời gian theo múi giờ Việt Nam (GMT+7)_",
         parse_mode=ParseMode.MARKDOWN
     )
@@ -1413,6 +1418,7 @@ def test_command(update: Update, context: CallbackContext):
         f"✅ S1 Bot đang kết nối!\n"
         f"⏰ Thời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
         f"👤 User ID: {update.effective_user.id}"
+    )
     
 def main():
     """Main entry point to start the bot."""
