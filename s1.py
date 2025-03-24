@@ -10,9 +10,10 @@ import pytz
 import traceback
 import sys
 import io
+import re
 from datetime import datetime, timedelta
 from telegram import Update, Bot
-from telegram.ext import Updater, CommandHandler, CallbackContext, JobQueue
+from telegram.ext import Updater, CommandHandler, CallbackContext, JobQueue, ConversationHandler, MessageHandler, Filters
 from binance.client import Client
 from openpyxl import Workbook
 from openpyxl.chart import LineChart, Reference
@@ -20,6 +21,7 @@ from openpyxl.chart.axis import DateAxis
 from openpyxl.chart.marker import Marker
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
+from init_pivots import parse_pivot_input, save_initial_pivots
 
 # Thiết lập mã hóa UTF-8 cho đầu ra tiêu chuẩn
 if sys.stdout.encoding != 'utf-8':
@@ -744,6 +746,38 @@ class PivotData:
             save_log(f"Thời gian: {pivot.get('vn_datetime', pivot['time'])}", DEBUG_LOG_FILE)
             save_log(f"Hướng: {pivot['direction']}", DEBUG_LOG_FILE)
             
+            # Trong phần cuối hàm, sau khi đã thêm pivot thành công:
+            if ENVIRONMENT == 'production' and not pivot.get('skip_notification', False):
+                # Gửi thông báo về pivot mới qua Telegram
+                try:
+                    bot = Bot(TOKEN)
+                    
+                    # Tạo thông báo chi tiết
+                    pivot_type = pivot.get('type', 'Unknown')
+                    price = pivot['price']
+                    time_str = pivot.get('vn_datetime', pivot.get('time', 'Unknown time'))
+                    
+                    # Thêm emoji tùy loại pivot
+                    emoji = {
+                        'HH': '🚀', 'HL': '🔄', 'LH': '🔄', 'LL': '📉'
+                    }.get(pivot_type, '🔔')
+                    
+                    message = (
+                        f"{emoji} *{pivot_type} Pivot Phát Hiện!*\n\n"
+                        f"💰 *Giá:* ${price:,.2f}\n"
+                        f"⏰ *Thời gian:* {time_str}\n"
+                        f"📊 *Loại:* {pivot_type} ({pivot['direction']})\n"
+                    )
+                    
+                    bot.send_message(
+                        chat_id=CHAT_ID,
+                        text=message,
+                        parse_mode='Markdown'
+                    )
+                    
+                except Exception as e:
+                    save_log(f"❌ Lỗi khi gửi thông báo Telegram: {str(e)}", DEBUG_LOG_FILE)
+            
             return True
 
         except Exception as e:
@@ -1080,6 +1114,145 @@ pivot_data = PivotData()
 
 # Cuối file s1.py thêm dòng này
 __all__ = ['pivot_data', 'detect_pivot', 'save_log', 'set_current_time_and_user']
+
+def start_setpivots(update: Update, context: CallbackContext):
+    """Bắt đầu quá trình thiết lập 4 pivot ban đầu"""
+    context.user_data['pivots'] = []
+    update.message.reply_text(
+        "*Thiết lập 4 pivot ban đầu*\n\n"
+        "Vui lòng cung cấp thông tin pivot LL đầu tiên theo định dạng:\n"
+        "`LL:giá:thời_gian`\n\n"
+        "Ví dụ: `LL:79894:00:30` (giá $79,894 lúc 00:30)\n\n"
+        "_Lưu ý: Sử dụng thời gian theo múi giờ Việt Nam (GMT+7)_",
+        parse_mode=ParseMode.MARKDOWN
+    )
+    return WAITING_FOR_PIVOT_LL
+
+def process_pivot_ll(update: Update, context: CallbackContext):
+    """Xử lý pivot LL"""
+    pivot_text = update.message.text
+    pivot_data = parse_pivot_input(pivot_text)
+    
+    if not pivot_data or pivot_data['type'] != 'LL':
+        update.message.reply_text(
+            "❌ Định dạng không đúng hoặc loại pivot không phải LL!\n"
+            "Vui lòng nhập lại theo định dạng: `LL:giá:thời_gian`\n"
+            "Ví dụ: `LL:79894:00:30`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return WAITING_FOR_PIVOT_LL
+        
+    # Lưu pivot vào user_data
+    context.user_data['pivots'].append(pivot_data)
+    
+    update.message.reply_text(
+        f"✅ Đã lưu pivot LL: ${pivot_data['price']:,.2f} lúc {pivot_data['vn_time']}\n\n"
+        "Vui lòng cung cấp thông tin pivot LH theo định dạng:\n"
+        "`LH:giá:thời_gian`\n\n"
+        "Ví dụ: `LH:82266:09:30`",
+        parse_mode=ParseMode.MARKDOWN
+    )
+    return WAITING_FOR_PIVOT_LH
+
+def process_pivot_lh(update: Update, context: CallbackContext):
+    """Xử lý pivot LH"""
+    pivot_text = update.message.text
+    pivot_data = parse_pivot_input(pivot_text)
+    
+    if not pivot_data or pivot_data['type'] != 'LH':
+        update.message.reply_text(
+            "❌ Định dạng không đúng hoặc loại pivot không phải LH!\n"
+            "Vui lòng nhập lại theo định dạng: `LH:giá:thời_gian`\n"
+            "Ví dụ: `LH:82266:09:30`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return WAITING_FOR_PIVOT_LH
+        
+    # Lưu pivot vào user_data
+    context.user_data['pivots'].append(pivot_data)
+    
+    update.message.reply_text(
+        f"✅ Đã lưu pivot LH: ${pivot_data['price']:,.2f} lúc {pivot_data['vn_time']}\n\n"
+        "Vui lòng cung cấp thông tin pivot HL theo định dạng:\n"
+        "`HL:giá:thời_gian`\n\n"
+        "Ví dụ: `HL:81730:13:30`",
+        parse_mode=ParseMode.MARKDOWN
+    )
+    return WAITING_FOR_PIVOT_HL
+
+def process_pivot_hl(update: Update, context: CallbackContext):
+    """Xử lý pivot HL"""
+    pivot_text = update.message.text
+    pivot_data = parse_pivot_input(pivot_text)
+    
+    if not pivot_data or pivot_data['type'] != 'HL':
+        update.message.reply_text(
+            "❌ Định dạng không đúng hoặc loại pivot không phải HL!\n"
+            "Vui lòng nhập lại theo định dạng: `HL:giá:thời_gian`\n"
+            "Ví dụ: `HL:81730:13:30`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return WAITING_FOR_PIVOT_HL
+        
+    # Lưu pivot vào user_data
+    context.user_data['pivots'].append(pivot_data)
+    
+    update.message.reply_text(
+        f"✅ Đã lưu pivot HL: ${pivot_data['price']:,.2f} lúc {pivot_data['vn_time']}\n\n"
+        "Vui lòng cung cấp thông tin pivot HH theo định dạng:\n"
+        "`HH:giá:thời_gian`\n\n"
+        "Ví dụ: `HH:85270:22:30`",
+        parse_mode=ParseMode.MARKDOWN
+    )
+    return WAITING_FOR_PIVOT_HH
+
+def process_pivot_hh(update: Update, context: CallbackContext):
+    """Xử lý pivot HH"""
+    pivot_text = update.message.text
+    pivot_data = parse_pivot_input(pivot_text)
+    
+    if not pivot_data or pivot_data['type'] != 'HH':
+        update.message.reply_text(
+            "❌ Định dạng không đúng hoặc loại pivot không phải HH!\n"
+            "Vui lòng nhập lại theo định dạng: `HH:giá:thời_gian`\n"
+            "Ví dụ: `HH:85270:22:30`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return WAITING_FOR_PIVOT_HH
+        
+    # Lưu pivot vào user_data
+    context.user_data['pivots'].append(pivot_data)
+    
+    # Lưu tất cả pivot và thêm vào S1
+    pivots = context.user_data['pivots']
+    
+    # Lưu vào file để có thể sử dụng lại sau này
+    save_initial_pivots(pivots)
+    
+    # Thêm các pivot vào S1
+    pivot_data.add_initial_trading_view_pivots(pivots)
+    
+    # Thông báo thành công
+    pivot_info = "\n".join([
+        f"• {p['type']}: ${p['price']:,.2f} ({p['vn_time']})"
+        for p in pivots
+    ])
+    
+    update.message.reply_text(
+        f"✅ *Đã thiết lập thành công 4 pivot ban đầu!*\n\n"
+        f"{pivot_info}\n\n"
+        f"S1 Bot đã sẵn sàng phát hiện các pivot mới.",
+        parse_mode=ParseMode.MARKDOWN
+    )
+    
+    return ConversationHandler.END
+
+def cancel_setpivots(update: Update, context: CallbackContext):
+    """Hủy quá trình thiết lập pivot"""
+    update.message.reply_text(
+        "❌ Đã hủy quá trình thiết lập pivot ban đầu."
+    )
+    return ConversationHandler.END
     
 def backup_pivots():
     """Sao lưu dữ liệu pivot định kỳ"""
@@ -1185,7 +1358,60 @@ def schedule_next_run(job_queue):
     except Exception as e:
         logger.error(f"Error scheduling next run: {e}")
         save_log(f"Error scheduling next run: {e}", DEBUG_LOG_FILE)
-     
+        
+def help_command(update: Update, context: CallbackContext):
+    """Hiển thị trợ giúp cho bot"""
+    help_text = (
+        "*S1 Bot - Hướng dẫn sử dụng*\n\n"
+        "*Các lệnh cơ bản:*\n"
+        "/help - Hiển thị trợ giúp này\n"
+        "/setpivots - Thiết lập 4 pivot ban đầu để S1 có thể phân loại pivot mới\n"
+        "/status - Hiển thị trạng thái của bot\n\n"
+        
+        "*Quy trình sử dụng:*\n"
+        "1. Dùng lệnh /setpivots để thiết lập 4 pivot ban đầu (LL, LH, HL, HH)\n"
+        "2. Bot sẽ tự động thu thập dữ liệu từ Binance mỗi 30 phút\n"
+        "3. Khi phát hiện pivot mới, bot sẽ thông báo trong chat này\n\n"
+        
+        "*Chú ý:* Tất cả thời gian được sử dụng là múi giờ Việt Nam (GMT+7)"
+    )
+    
+    update.message.reply_text(
+        help_text,
+        parse_mode=ParseMode.MARKDOWN
+    )  
+
+def status_command(update: Update, context: CallbackContext):
+    """Hiển thị trạng thái hiện tại của bot"""
+    pivots = pivot_data.get_all_pivots()
+    
+    # Thông tin chung
+    now_utc = datetime.now(pytz.UTC)
+    now_vn = now_utc.astimezone(pytz.timezone('Asia/Ho_Chi_Minh'))
+    
+    # Tạo tin nhắn trạng thái
+    status_text = (
+        "*S1 Bot Status*\n\n"
+        f"⏰ *Thời gian hiện tại:* {now_vn.strftime('%Y-%m-%d %H:%M:%S')} (GMT+7)\n"
+        f"🔢 *Tổng số pivot:* {len(pivots)}\n"
+        f"👤 *User:* {pivot_data.user}\n"
+        f"⚙️ *Environment:* {ENVIRONMENT}\n\n"
+    )
+    
+    # Thêm thông tin về pivot gần đây nhất
+    if pivots:
+        recent_pivots = pivots[-4:] if len(pivots) >= 4 else pivots
+        status_text += "*Pivot gần đây:*\n"
+        for pivot in recent_pivots:
+            status_text += f"• {pivot['type']}: ${pivot['price']:,.2f} ({pivot.get('vn_datetime', pivot['time'])})\n"
+    else:
+        status_text += "*Chưa có pivot nào!* Sử dụng /setpivots để thiết lập 4 pivot ban đầu.\n"
+    
+    update.message.reply_text(
+        status_text,
+        parse_mode=ParseMode.MARKDOWN
+    )
+    
 def main():
     """Main entry point to start the bot."""
     try:
@@ -1226,7 +1452,33 @@ def main():
             text=f"🚀 *S1 BOT STARTED*\n\nBot đã được khởi động thành công!\nMôi trường: `{ENVIRONMENT}`\nThời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             parse_mode='Markdown'
         )
-        
+        # Set up conversation handler for setting initial pivots
+        setpivots_conv_handler = ConversationHandler(
+            entry_points=[CommandHandler('setpivots', start_setpivots)],
+            states={
+                WAITING_FOR_PIVOT_LL: [
+                    MessageHandler(Filters.text & ~Filters.command, process_pivot_ll)
+                ],
+                WAITING_FOR_PIVOT_LH: [
+                    MessageHandler(Filters.text & ~Filters.command, process_pivot_lh)
+                ],
+                WAITING_FOR_PIVOT_HL: [
+                    MessageHandler(Filters.text & ~Filters.command, process_pivot_hl)
+                ],
+                WAITING_FOR_PIVOT_HH: [
+                    MessageHandler(Filters.text & ~Filters.command, process_pivot_hh)
+                ]
+            },
+            fallbacks=[CommandHandler('cancel', cancel_setpivots)],
+            allow_reentry=True
+        )
+
+        # Add conversation handler to dispatcher
+        dp.add_handler(setpivots_conv_handler)
+
+        # Add help command handler
+        dp.add_handler(CommandHandler('help', help_command))
+
         print("Bot dang chay...")
         logger.info("Bot khởi động thành công.")
         updater.start_polling()
