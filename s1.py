@@ -741,24 +741,27 @@ class PivotData:
             
             # Trong phần cuối hàm, sau khi đã thêm pivot thành công:
             if ENVIRONMENT == 'production' and not pivot.get('skip_notification', False):
-                # Gửi thông báo về pivot mới qua Telegram
                 try:
                     bot = Bot(TOKEN)
                     
-                    # Tạo thông báo chi tiết
                     pivot_type = pivot.get('type', 'Unknown')
                     price = pivot['price']
+                    # Sử dụng vn_datetime nếu có, nếu không thì dùng time
                     time_str = pivot.get('vn_datetime', pivot.get('time', 'Unknown time'))
                     
-                    # Thêm emoji tùy loại pivot
                     emoji = {
                         'HH': '🚀', 'HL': '🔄', 'LH': '🔄', 'LL': '📉'
                     }.get(pivot_type, '🔔')
                     
+                    # Đảm bảo hiển thị đầy đủ giờ:phút
+                    vn_time = pivot.get('vn_time', '')
+                    vn_date = pivot.get('vn_date', '')
+                    time_display = f"{vn_time}" if not vn_date else f"{vn_date} {vn_time}"
+                    
                     message = (
                         f"{emoji} *{pivot_type} Pivot Phát Hiện!*\n\n"
                         f"💰 *Giá:* ${price:,.2f}\n"
-                        f"⏰ *Thời gian:* {time_str}\n"
+                        f"⏰ *Thời gian:* {time_display}\n"
                         f"📊 *Loại:* {pivot_type} ({pivot['direction']})\n"
                     )
                     
@@ -772,7 +775,7 @@ class PivotData:
                     save_log(f"❌ Lỗi khi gửi thông báo Telegram: {str(e)}", DEBUG_LOG_FILE)
             
             return True
-
+            
         except Exception as e:
             save_log(f"❌ Lỗi khi thêm pivot: {str(e)}", DEBUG_LOG_FILE)
             save_log(traceback.format_exc(), DEBUG_LOG_FILE)
@@ -1276,7 +1279,6 @@ def process_pivot_ll(update: Update, context: CallbackContext):
         pivot_text = update.message.text
         save_log(f"Đang xử lý input pivot LL: {pivot_text}", DEBUG_LOG_FILE)
         
-        # Thêm debug cho parse_pivot_input
         try:
             new_pivot = parse_pivot_input(pivot_text)
             save_log(f"Kết quả parse pivot: {new_pivot}", DEBUG_LOG_FILE)
@@ -1286,7 +1288,7 @@ def process_pivot_ll(update: Update, context: CallbackContext):
             update.message.reply_text(
                 "❌ Có lỗi khi xử lý định dạng pivot. Vui lòng thử lại với định dạng đơn giản hơn.\n"
                 "Ví dụ: `LL:83597:06:30`",
-                parse_mode='Markdown'  # Thay thế ParseMode.MARKDOWN
+                parse_mode='Markdown'
             )
             return WAITING_FOR_PIVOT_LL
         
@@ -1295,7 +1297,7 @@ def process_pivot_ll(update: Update, context: CallbackContext):
                 "❌ Định dạng không đúng hoặc loại pivot không phải LL!\n"
                 "Vui lòng nhập lại theo định dạng: `LL:giá:thời_gian`\n"
                 "Ví dụ: `LL:79894:00:30`",
-                parse_mode='Markdown'  # Thay thế ParseMode.MARKDOWN
+                parse_mode='Markdown'
             )
             return WAITING_FOR_PIVOT_LL
             
@@ -1303,7 +1305,7 @@ def process_pivot_ll(update: Update, context: CallbackContext):
         context.user_data['pivots'] = context.user_data.get('pivots', [])
         context.user_data['pivots'].append(new_pivot)
         
-        # Tạo thông báo với cả thông tin ngày
+        # Hiển thị thời gian CHÍNH XÁC bao gồm cả phút
         date_info = f" ngày {new_pivot['vn_date']}" if 'vn_date' in new_pivot else ""
         
         update.message.reply_text(
@@ -1311,18 +1313,18 @@ def process_pivot_ll(update: Update, context: CallbackContext):
             "Vui lòng cung cấp thông tin pivot LH theo định dạng:\n"
             "`LH:giá:thời_gian`\n\n"
             "Ví dụ: `LH:82266:09:30`",
-            parse_mode='Markdown'  # Thay thế ParseMode.MARKDOWN
+            parse_mode='Markdown'
         )
         
         return WAITING_FOR_PIVOT_LH
-    
+        
     except Exception as e:
         save_log(f"❌ Lỗi trong process_pivot_ll: {str(e)}", DEBUG_LOG_FILE)
         save_log(traceback.format_exc(), DEBUG_LOG_FILE)
         try:
             update.message.reply_text(
                 "❌ Có lỗi xảy ra khi xử lý pivot LL. Vui lòng thử lại sau.",
-                parse_mode='Markdown'  # Thay thế ParseMode.MARKDOWN
+                parse_mode='Markdown'
             )
         except:
             pass
@@ -1334,7 +1336,6 @@ def process_pivot_lh(update: Update, context: CallbackContext):
         pivot_text = update.message.text
         save_log(f"Đang xử lý input pivot LH: {pivot_text}", DEBUG_LOG_FILE)
         
-        # Thêm debug cho parse_pivot_input
         try:
             new_pivot = parse_pivot_input(pivot_text)
             save_log(f"Kết quả parse pivot: {new_pivot}", DEBUG_LOG_FILE)
@@ -1360,7 +1361,7 @@ def process_pivot_lh(update: Update, context: CallbackContext):
         # Lưu pivot vào user_data
         context.user_data['pivots'].append(new_pivot)
         
-        # Tạo thông báo với cả thông tin ngày
+        # Hiển thị thời gian CHÍNH XÁC bao gồm cả phút
         date_info = f" ngày {new_pivot['vn_date']}" if 'vn_date' in new_pivot else ""
         
         update.message.reply_text(
@@ -1372,7 +1373,7 @@ def process_pivot_lh(update: Update, context: CallbackContext):
         )
         
         return WAITING_FOR_PIVOT_HL
-    
+        
     except Exception as e:
         save_log(f"❌ Lỗi trong process_pivot_lh: {str(e)}", DEBUG_LOG_FILE)
         save_log(traceback.format_exc(), DEBUG_LOG_FILE)
@@ -1391,7 +1392,6 @@ def process_pivot_hl(update: Update, context: CallbackContext):
         pivot_text = update.message.text
         save_log(f"Đang xử lý input pivot HL: {pivot_text}", DEBUG_LOG_FILE)
         
-        # Thêm debug cho parse_pivot_input
         try:
             new_pivot = parse_pivot_input(pivot_text)
             save_log(f"Kết quả parse pivot: {new_pivot}", DEBUG_LOG_FILE)
@@ -1417,7 +1417,7 @@ def process_pivot_hl(update: Update, context: CallbackContext):
         # Lưu pivot vào user_data
         context.user_data['pivots'].append(new_pivot)
         
-        # Tạo thông báo với cả thông tin ngày
+        # Hiển thị thời gian CHÍNH XÁC bao gồm cả phút
         date_info = f" ngày {new_pivot['vn_date']}" if 'vn_date' in new_pivot else ""
         
         update.message.reply_text(
@@ -1429,7 +1429,7 @@ def process_pivot_hl(update: Update, context: CallbackContext):
         )
         
         return WAITING_FOR_PIVOT_HH
-    
+        
     except Exception as e:
         save_log(f"❌ Lỗi trong process_pivot_hl: {str(e)}", DEBUG_LOG_FILE)
         save_log(traceback.format_exc(), DEBUG_LOG_FILE)
@@ -1448,7 +1448,6 @@ def process_pivot_hh(update: Update, context: CallbackContext):
         pivot_text = update.message.text
         save_log(f"Đang xử lý input pivot HH: {pivot_text}", DEBUG_LOG_FILE)
         
-        # Thêm debug cho parse_pivot_input
         try:
             new_pivot = parse_pivot_input(pivot_text)
             save_log(f"Kết quả parse pivot: {new_pivot}", DEBUG_LOG_FILE)
@@ -1480,11 +1479,12 @@ def process_pivot_hh(update: Update, context: CallbackContext):
         # Lưu vào file để có thể sử dụng lại sau này
         save_initial_pivots(pivots)
         
+        # Thêm pivot vào instance PivotData
         import sys
         current_module = sys.modules[__name__]
         current_module.pivot_data.add_initial_trading_view_pivots(pivots)
         
-        # Tạo thông tin pivot với ngày
+        # Tạo thông tin pivot với ngày và giờ chính xác
         pivot_info = "\n".join([
             f"• {p['type']}: ${p['price']:,.2f} ({p['vn_time']}" + 
             (f" ngày {p['vn_date']}" if 'vn_date' in p else "") + ")"
@@ -1499,7 +1499,7 @@ def process_pivot_hh(update: Update, context: CallbackContext):
         )
         
         return ConversationHandler.END
-    
+        
     except Exception as e:
         save_log(f"❌ Lỗi trong process_pivot_hh: {str(e)}", DEBUG_LOG_FILE)
         save_log(traceback.format_exc(), DEBUG_LOG_FILE)
