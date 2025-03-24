@@ -23,6 +23,12 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 from init_pivots import parse_pivot_input, save_initial_pivots
 
+# Define conversation states
+WAITING_FOR_PIVOT_LL = 1
+WAITING_FOR_PIVOT_LH = 2
+WAITING_FOR_PIVOT_HL = 3
+WAITING_FOR_PIVOT_HH = 4
+
 # Thiết lập mã hóa UTF-8 cho đầu ra tiêu chuẩn
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -1229,8 +1235,9 @@ def process_pivot_hh(update: Update, context: CallbackContext):
     # Lưu vào file để có thể sử dụng lại sau này
     save_initial_pivots(pivots)
     
-    # Thêm các pivot vào S1
-    pivot_data.add_initial_trading_view_pivots(pivots)
+    import sys
+    current_module = sys.modules[__name__]
+    current_module.pivot_data.add_initial_trading_view_pivots(pivots)
     
     # Thông báo thành công
     pivot_info = "\n".join([
@@ -1415,7 +1422,7 @@ def status_command(update: Update, context: CallbackContext):
 def main():
     """Main entry point to start the bot."""
     try:
-         # Thêm thông tin về thời gian khởi động
+        # Thêm thông tin về thời gian khởi động
         start_time = datetime.now()
         start_time_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
         
@@ -1427,31 +1434,14 @@ def main():
         # Thông báo khởi động
         save_log("=== S1 Bot khởi động ===", DEBUG_LOG_FILE)
         save_log(f"Môi trường: {ENVIRONMENT}", DEBUG_LOG_FILE)
-        save_log(f"Thời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", DEBUG_LOG_FILE)
+        save_log(f"Thời gian khởi động: {start_time_str}", DEBUG_LOG_FILE)
                 
         updater = Updater(TOKEN, use_context=True)
         dp = updater.dispatcher
         job_queue = updater.job_queue
         
         schedule_next_run(job_queue)  # Schedule first run
-        
-        print("S1 Bot is running...")  # Thay thế bằng tiếng Anh hoặc không dấu
-        logger.info("Bot started successfully.")
-        updater.start_polling()
-        updater.idle()
-    except Exception as e:
-        error_msg = f"Error in main: {str(e)}"
-        logger.error(error_msg)
-        save_log(error_msg, DEBUG_LOG_FILE)
-        save_log(traceback.format_exc(), DEBUG_LOG_FILE)
-        
-        # Thông báo khởi động qua Telegram
-        bot = Bot(TOKEN)
-        bot.send_message(
-            chat_id=CHAT_ID,
-            text=f"🚀 *S1 BOT STARTED*\n\nBot đã được khởi động thành công!\nMôi trường: `{ENVIRONMENT}`\nThời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            parse_mode='Markdown'
-        )
+
         # Set up conversation handler for setting initial pivots
         setpivots_conv_handler = ConversationHandler(
             entry_points=[CommandHandler('setpivots', start_setpivots)],
@@ -1473,14 +1463,21 @@ def main():
             allow_reentry=True
         )
 
-        # Add conversation handler to dispatcher
+        # Add handlers to dispatcher
         dp.add_handler(setpivots_conv_handler)
-
-        # Add help command handler
         dp.add_handler(CommandHandler('help', help_command))
-
-        print("Bot dang chay...")
-        logger.info("Bot khởi động thành công.")
+        dp.add_handler(CommandHandler('status', status_command))
+        
+        # Thông báo khởi động qua Telegram
+        bot = Bot(TOKEN)
+        bot.send_message(
+            chat_id=CHAT_ID,
+            text=f"🚀 *S1 BOT STARTED*\n\nBot đã được khởi động thành công!\nMôi trường: `{ENVIRONMENT}`\nThời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            parse_mode='Markdown'
+        )
+        
+        print("S1 Bot is running...")  # Thay thế bằng tiếng Anh hoặc không dấu
+        logger.info("Bot started successfully.")
         updater.start_polling()
         updater.idle()
     except Exception as e:
