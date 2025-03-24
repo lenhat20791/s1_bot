@@ -69,14 +69,10 @@ def parse_pivot_input(pivot_text):
         pivot_type = parts[0].upper()  # LL, LH, HL, HH
         price = float(parts[1])
         
-        # Lấy ngày hiện tại theo múi giờ VN
-        now = datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))
-        default_vn_date = now.strftime('%Y-%m-%d')
-        
         # Xử lý phần thời gian và ngày tháng
         if len(parts) == 3:  # Định dạng không có ngày: LL:83597:06:30
             time_str = parts[2]
-            vn_date = default_vn_date
+            vn_date = datetime.now(pytz.timezone('Asia/Ho_Chi_Minh')).strftime('%Y-%m-%d')
         else:  # Có ngày: LL:83597:23-03-2025:06:30 hoặc LL:83597:23/03/2025:06:30
             date_part = parts[2].replace('/', '-')  # Chuẩn hóa dấu phân cách
             time_str = parts[3]
@@ -89,28 +85,50 @@ def parse_pivot_input(pivot_text):
                 else:
                     vn_date = date_part  # Đã là YYYY-MM-DD
             else:
-                vn_date = default_vn_date
+                vn_date = datetime.now(pytz.timezone('Asia/Ho_Chi_Minh')).strftime('%Y-%m-%d')
         
-        # Xử lý time_str để giữ nguyên phút
-        if ":" in time_str:  # Định dạng HH:MM
+        # Xử lý time_str để đảm bảo định dạng HH:MM
+        if ':' in time_str:
+            # Định dạng đã có dấu : (06:30)
             hour, minute = time_str.split(':')
-            vn_time = f"{hour.zfill(2)}:{minute.zfill(2)}"
-        elif len(time_str) == 4:  # Định dạng HHMM (0630)
-            vn_time = f"{time_str[:2]}:{time_str[2:]}"
-        else:  # Chỉ có giờ
-            vn_time = f"{time_str.zfill(2)}:00"
-            
-        # Validate thời gian
-        try:
-            hour = int(vn_time.split(':')[0])
-            minute = int(vn_time.split(':')[1])
-            if hour < 0 or hour > 23 or minute < 0 or minute > 59:
-                print(f"Thời gian không hợp lệ: {vn_time}")
+            # Đảm bảo giờ và phút là số hợp lệ
+            try:
+                hour = int(hour)
+                minute = int(minute)
+                if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    vn_time = f"{hour:02d}:{minute:02d}"
+                else:
+                    print(f"Thời gian không hợp lệ: {time_str}")
+                    return None
+            except ValueError:
+                print(f"Định dạng thời gian không hợp lệ: {time_str}")
                 return None
-        except:
-            print(f"Định dạng thời gian không hợp lệ: {vn_time}")
-            return None
-            
+        elif len(time_str) == 4:
+            # Định dạng HHMM (0630)
+            try:
+                hour = int(time_str[:2])
+                minute = int(time_str[2:])
+                if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    vn_time = f"{hour:02d}:{minute:02d}"
+                else:
+                    print(f"Thời gian không hợp lệ: {time_str}")
+                    return None
+            except ValueError:
+                print(f"Định dạng thời gian không hợp lệ: {time_str}")
+                return None
+        else:
+            # Chỉ có giờ
+            try:
+                hour = int(time_str)
+                if 0 <= hour <= 23:
+                    vn_time = f"{hour:02d}:00"
+                else:
+                    print(f"Giờ không hợp lệ: {time_str}")
+                    return None
+            except ValueError:
+                print(f"Định dạng giờ không hợp lệ: {time_str}")
+                return None
+                
         # Xác định direction dựa vào loại pivot
         if pivot_type in ["HH", "LH"]:
             direction = "high"
@@ -121,8 +139,8 @@ def parse_pivot_input(pivot_text):
         result = {
             "type": pivot_type,
             "price": price,
-            "vn_time": vn_time,        # Giữ nguyên phút, không làm tròn
-            "vn_date": vn_date,        # Đã đảm bảo không null
+            "vn_time": vn_time,        # Đã đảm bảo định dạng HH:MM chính xác
+            "vn_date": vn_date,        # Đã đảm bảo format YYYY-MM-DD
             "direction": direction,
             "confirmed": True
         }
