@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timedelta
 import pytz
 import re
+import traceback
 
 # Đường dẫn đến file lưu trữ các pivot ban đầu
 INIT_PIVOTS_FILE = "data/initial_pivots.json"
@@ -105,22 +106,31 @@ def parse_pivot_input(pivot_text):
                 if len(date_parts) != 3:
                     print(f"DEBUG - Định dạng ngày không hợp lệ: {date_str}")
                     return None
-                
-                # Xử lý cả 2 định dạng DD-MM-YYYY và YYYY-MM-DD
-                if len(date_parts[2]) == 4:  # DD-MM-YYYY
-                    vn_date = f"{date_parts[2]}-{date_parts[1]}-{date_parts[0]}"
-                else:  # YYYY-MM-DD
+
+                if len(date_parts[0]) == 4:  # YYYY-MM-DD
                     vn_date = date_str
+                else:  # DD-MM-YYYY
+                    vn_date = f"{date_parts[2]}-{date_parts[1]}-{date_parts[0]}"
+
+                print(f"DEBUG - Xử lý ngày tháng:")
+                print(f"  Input: {date_str}")
+                print(f"  Parts: {date_parts}")
+                print(f"  Output: {vn_date}")
                     
                 # Validate ngày tháng
                 try:
-                    datetime.strptime(vn_date, '%Y-%m-%d')
+                    parsed_date = datetime.strptime(vn_date, '%Y-%m-%d')
+                    # Kiểm tra thêm năm hợp lệ (2020-2030)
+                    if not (2020 <= parsed_date.year <= 2030):
+                        print(f"DEBUG - Năm không hợp lệ: {parsed_date.year}")
+                        return None
                 except ValueError:
                     print(f"DEBUG - Ngày tháng không hợp lệ: {vn_date}")
                     return None
                     
             except Exception as e:
                 print(f"DEBUG - Lỗi xử lý ngày tháng: {str(e)}")
+                print(traceback.format_exc())  # Thêm traceback cho debug
                 return None
                 
         print(f"DEBUG - Ngày đã xử lý: {vn_date}")
@@ -168,7 +178,8 @@ def parse_pivot_input(pivot_text):
                 "input": pivot_text,
                 "parts": parts,
                 "parsed_hour": hour,
-                "parsed_minute": minute
+                "parsed_minute": minute,
+                "parsed_date": vn_date
             }
         }
         
