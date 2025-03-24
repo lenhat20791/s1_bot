@@ -12,7 +12,7 @@ import sys
 import io
 import re
 from datetime import datetime, timedelta
-from telegram import Update, Bot
+from telegram import Update, Bot, ParseMode
 from telegram.ext import Updater, CommandHandler, CallbackContext, JobQueue, ConversationHandler, MessageHandler, Filters
 from binance.client import Client
 from openpyxl import Workbook
@@ -1144,33 +1144,61 @@ def start_setpivots(update: Update, context: CallbackContext):
 
 def process_pivot_ll(update: Update, context: CallbackContext):
     """Xử lý pivot LL"""
-    pivot_text = update.message.text
-    new_pivot = parse_pivot_input(pivot_text)  # Đổi từ pivot_data thành new_pivot
-    
-    if not new_pivot or new_pivot['type'] != 'LL':
-        update.message.reply_text(
-            "❌ Định dạng không đúng hoặc loại pivot không phải LL!\n"
-            "Vui lòng nhập lại theo định dạng: `LL:giá:thời_gian`\n"
-            "Ví dụ: `LL:79894:00:30`",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        return WAITING_FOR_PIVOT_LL
+    try:
+        pivot_text = update.message.text
+        save_log(f"Đang xử lý input pivot LL: {pivot_text}", DEBUG_LOG_FILE)
         
-    # Lưu pivot vào user_data
-    context.user_data['pivots'].append(new_pivot)
+        # Thêm debug cho parse_pivot_input
+        try:
+            new_pivot = parse_pivot_input(pivot_text)
+            save_log(f"Kết quả parse pivot: {new_pivot}", DEBUG_LOG_FILE)
+        except Exception as parse_error:
+            save_log(f"❌ Lỗi khi parse pivot: {str(parse_error)}", DEBUG_LOG_FILE)
+            save_log(traceback.format_exc(), DEBUG_LOG_FILE)
+            update.message.reply_text(
+                "❌ Có lỗi khi xử lý định dạng pivot. Vui lòng thử lại với định dạng đơn giản hơn.\n"
+                "Ví dụ: `LL:83597:06:30`",
+                parse_mode='Markdown'  # Thay thế ParseMode.MARKDOWN
+            )
+            return WAITING_FOR_PIVOT_LL
+        
+        if not new_pivot or new_pivot['type'] != 'LL':
+            update.message.reply_text(
+                "❌ Định dạng không đúng hoặc loại pivot không phải LL!\n"
+                "Vui lòng nhập lại theo định dạng: `LL:giá:thời_gian`\n"
+                "Ví dụ: `LL:79894:00:30`",
+                parse_mode='Markdown'  # Thay thế ParseMode.MARKDOWN
+            )
+            return WAITING_FOR_PIVOT_LL
+            
+        # Lưu pivot vào user_data
+        context.user_data['pivots'] = context.user_data.get('pivots', [])
+        context.user_data['pivots'].append(new_pivot)
+        
+        # Tạo thông báo với cả thông tin ngày
+        date_info = f" ngày {new_pivot['vn_date']}" if 'vn_date' in new_pivot else ""
+        
+        update.message.reply_text(
+            f"✅ Đã lưu pivot LL: ${new_pivot['price']:,.2f} lúc {new_pivot['vn_time']}{date_info}\n\n"
+            "Vui lòng cung cấp thông tin pivot LH theo định dạng:\n"
+            "`LH:giá:thời_gian`\n\n"
+            "Ví dụ: `LH:82266:09:30`",
+            parse_mode='Markdown'  # Thay thế ParseMode.MARKDOWN
+        )
+        
+        return WAITING_FOR_PIVOT_LH
     
-    # Tạo thông báo với cả thông tin ngày
-    date_info = f"ngày {new_pivot['vn_date']}" if 'vn_date' in new_pivot else ""
-    
-    update.message.reply_text(
-        f"✅ Đã lưu pivot LL: ${new_pivot['price']:,.2f} lúc {new_pivot['vn_time']} {date_info}\n\n"
-        "Vui lòng cung cấp thông tin pivot LH theo định dạng:\n"
-        "`LH:giá:thời_gian`\n\n"
-        "Ví dụ: `LH:82266:09:30`",
-        parse_mode=ParseMode.MARKDOWN
-    )
-    
-    return WAITING_FOR_PIVOT_LH
+    except Exception as e:
+        save_log(f"❌ Lỗi trong process_pivot_ll: {str(e)}", DEBUG_LOG_FILE)
+        save_log(traceback.format_exc(), DEBUG_LOG_FILE)
+        try:
+            update.message.reply_text(
+                "❌ Có lỗi xảy ra khi xử lý pivot LL. Vui lòng thử lại sau.",
+                parse_mode='Markdown'  # Thay thế ParseMode.MARKDOWN
+            )
+        except:
+            pass
+        return WAITING_FOR_PIVOT_LL
 
 def process_pivot_lh(update: Update, context: CallbackContext):
     """Xử lý pivot LH"""
