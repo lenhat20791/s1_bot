@@ -8,6 +8,8 @@ import os
 import time
 import pytz
 import traceback
+import sys
+import io
 from datetime import datetime, timedelta
 from telegram import Update, Bot
 from telegram.ext import Updater, CommandHandler, CallbackContext, JobQueue
@@ -19,15 +21,16 @@ from openpyxl.chart.marker import Marker
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
-# Configurations
-TOKEN = "7637023247:AAG_utVTC0rXyfute9xsBdh-IrTUE3432o8"
-BINANCE_API_KEY = "aVim4czsoOzuLxk0CsEsV0JwE58OX90GRD8OvDfT8xH2nfSEC0mMnMCVrwgFcSEi"
-BINANCE_API_SECRET = "rIQ2LLUtYWBcXt5FiMIHuXeeDJqeREbvw8r9NlTJ83gveSAvpSMqd1NBoQjAodC4"
-CHAT_ID = 7662080576
-LOG_FILE = "bot_log.json"
-PATTERN_LOG_FILE = "pattern_log.txt"
-DEBUG_LOG_FILE = "debug_historical_test.log"
-EXCEL_FILE = "pivots.xlsx"
+# Thiết lập mã hóa UTF-8 cho đầu ra tiêu chuẩn
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    
+# Đảm bảo biến môi trường PYTHONIOENCODING được thiết lập
+os.environ["PYTHONIOENCODING"] = "utf-8"
+
+# Import cấu hình từ config.py
+from config import TOKEN, BINANCE_API_KEY, BINANCE_API_SECRET, CHAT_ID
+from config import LOG_FILE, PATTERN_LOG_FILE, DEBUG_LOG_FILE, EXCEL_FILE, ENVIRONMENT
     
 # Setup Logging
 logging.basicConfig(level=logging.INFO)
@@ -59,22 +62,28 @@ def save_log(log_message, filename):
         
 # Thêm hàm để set các giá trị này
 def set_current_time_and_user(current_time, current_user):
-    """Set thời gian và user hiện tại với support múi giờ Việt Nam"""
+    """Set thời gian hiện tại và user"""
     try:
-        # Chuyển đổi sang múi giờ Việt Nam nếu input là UTC
-        if isinstance(current_time, str):
-            try:
-                # Parse thời gian UTC
-                utc_dt = datetime.strptime(current_time, '%Y-%m-%d %H:%M:%S')
-                utc_dt = utc_dt.replace(tzinfo=pytz.UTC)
-                # Chuyển sang múi giờ Việt Nam
-                vn_tz = pytz.timezone('Asia/Ho_Chi_Minh')
-                vn_time = utc_dt.astimezone(vn_tz)
-                # Format lại thành string
-                pivot_data.current_time = vn_time.strftime('%H:%M')  # Chỉ lấy giờ:phút cho pivot
-            except ValueError as e:
-                save_log(f"Error parsing time: {str(e)}", DEBUG_LOG_FILE)
-                return False
+        # Lấy thời gian hiện tại UTC
+        utc_dt = datetime.now(pytz.UTC)
+        # Chuyển sang múi giờ Việt Nam
+        vn_tz = pytz.timezone('Asia/Ho_Chi_Minh')
+        vn_time = utc_dt.astimezone(vn_tz)
+        
+        # Set time và user
+        pivot_data.current_time = vn_time.strftime('%H:%M')  # Chỉ lấy giờ:phút
+        pivot_data.current_user = current_user
+        
+        # Log thông tin
+        save_log("\n=== Cập nhật thông tin phiên ===", DEBUG_LOG_FILE)
+        save_log(f"UTC time: {utc_dt.strftime('%Y-%m-%d %H:%M:%S')}", DEBUG_LOG_FILE)
+        save_log(f"Vietnam time: {vn_time.strftime('%Y-%m-%d %H:%M:%S')}", DEBUG_LOG_FILE)
+        save_log(f"User: {current_user}", DEBUG_LOG_FILE)
+        return True
+
+    except Exception as e:
+        save_log(f"Error setting time and user: {str(e)}", DEBUG_LOG_FILE)
+        return False
 
         pivot_data.current_user = current_user
         
@@ -137,68 +146,24 @@ class PivotData:
         Xử lý khi có dữ liệu mới - hàm duy nhất để xử lý nến mới
         """
         try:
-            # Xác định nếu dữ liệu đầu vào đã có thông tin múi giờ
-            using_vn_time = 'time' in data and ('date' in data or 'vn_date' in data)
+            # Lấy thời gian hiện tại UTC
+            utc_now = datetime.now(pytz.UTC)
+            vn_now = utc_now.astimezone(pytz.timezone('Asia/Ho_Chi_Minh'))
             
-            # Lưu thời gian chính xác cho nến mới
-            if 'test_time' in data:
-                # Format: '2025-03-14 23:30' - đã là thời gian UTC
-                utc_dt = datetime.strptime(data['test_time'], '%Y-%m-%d %H:%M')
-                vn_dt = utc_dt + timedelta(hours=7)
-                
-                # Thêm thông tin thời gian Việt Nam
-                data['vn_time'] = vn_dt.strftime('%H:%M')
-                data['vn_date'] = vn_dt.strftime('%Y-%m-%d')
-                data['vn_datetime'] = vn_dt.strftime('%Y-%m-%d %H:%M')
-                
-                # Đảm bảo có thông tin UTC
-                data['time'] = utc_dt.strftime('%H:%M')  # Thời gian UTC cho S1
-                data['utc_date'] = utc_dt.strftime('%Y-%m-%d')
-                data['utc_datetime'] = utc_dt.strftime('%Y-%m-%d %H:%M')
-            elif using_vn_time:
-                # Đầu vào là thời gian Việt Nam, chuyển sang UTC
-                vn_date = data.get('vn_date', data.get('date'))
-                vn_time = data['time']
-                
-                save_log(f"Nhận dữ liệu múi giờ Việt Nam: {vn_date} {vn_time}", DEBUG_LOG_FILE)
-                
-                try:
-                    vn_dt = datetime.strptime(f"{vn_date} {vn_time}", '%Y-%m-%d %H:%M')
-                    utc_dt = vn_dt - timedelta(hours=7)
-                    
-                    # Lưu lại thông tin thời gian VN
-                    data['vn_time'] = vn_time
-                    data['vn_date'] = vn_date
-                    data['vn_datetime'] = f"{vn_date} {vn_time}"
-                    
-                    # Chuyển sang UTC cho S1
-                    data['time'] = utc_dt.strftime('%H:%M')  # Thời gian UTC
-                    data['utc_date'] = utc_dt.strftime('%Y-%m-%d')
-                    data['utc_datetime'] = utc_dt.strftime('%Y-%m-%d %H:%M')
-                    data['test_time'] = data['utc_datetime']  # Thêm test_time
-                    
-                    save_log(f"Đã chuyển sang UTC: {data['utc_datetime']}", DEBUG_LOG_FILE)
-                except Exception as e:
-                    save_log(f"⚠️ Lỗi khi chuyển đổi thời gian VN sang UTC: {str(e)}", DEBUG_LOG_FILE)
+            # Thêm thông tin thời gian vào data
+            data.update({
+                'time': utc_now.strftime('%H:%M'),         # Giờ UTC cho pivot
+                'utc_date': utc_now.strftime('%Y-%m-%d'),  # Ngày UTC
+                'vn_time': vn_now.strftime('%H:%M'),       # Giờ VN
+                'vn_date': vn_now.strftime('%Y-%m-%d'),    # Ngày VN
+                'vn_datetime': vn_now.strftime('%Y-%m-%d %H:%M')  # Datetime VN đầy đủ
+            })
             
             # 1. Thêm nến mới vào lịch sử
             self.price_history.append(data)
             
-            # Lấy thời gian từ dữ liệu cho việc log
-            if 'vn_datetime' in data:
-                log_datetime = f"{data['vn_datetime']} (VN) / {data.get('utc_datetime', 'Unknown')} (UTC)"
-            elif 'test_time' in data:
-                # Format: '2025-03-14 23:30'
-                utc_dt = datetime.strptime(data['test_time'], '%Y-%m-%d %H:%M')
-                vn_dt = utc_dt + timedelta(hours=7)
-                log_datetime = f"{vn_dt.strftime('%Y-%m-%d %H:%M')} (VN) / {data['test_time']} (UTC)"
-            else:
-                # Sử dụng thời gian hiện tại
-                current_date = datetime.now(pytz.UTC).date()
-                utc_time = data.get('time', 'Unknown')
-                log_datetime = f"{current_date} {utc_time} (UTC)"
-                
-            save_log(f"\n=== Nến {log_datetime} ===", DEBUG_LOG_FILE)
+            # Log thông tin nến mới
+            save_log(f"\n=== Nến mới {data['vn_datetime']} ===", DEBUG_LOG_FILE)
             save_log(f"📊 High: ${data['high']:,.2f}, Low: ${data['low']:,.2f}", DEBUG_LOG_FILE)
             save_log(f"📈 Tổng số nến: {len(self.price_history)}", DEBUG_LOG_FILE)
             
@@ -1116,7 +1081,63 @@ pivot_data = PivotData()
 # Cuối file s1.py thêm dòng này
 __all__ = ['pivot_data', 'detect_pivot', 'save_log', 'set_current_time_and_user']
     
-
+def backup_pivots():
+    """Sao lưu dữ liệu pivot định kỳ"""
+    try:
+        # Lấy thời gian hiện tại
+        backup_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Tên file backup
+        backup_file = f"backup/pivots_backup_{backup_time}.json"
+        
+        # Lấy dữ liệu pivot
+        pivots = pivot_data.get_all_pivots()
+        
+        # Lưu dữ liệu dưới dạng JSON
+        with open(backup_file, 'w', encoding='utf-8') as f:
+            json.dump([{
+                'price': p['price'],
+                'time': p['time'],
+                'direction': p['direction'],
+                'type': p.get('type', ''),
+                'utc_date': p.get('utc_date', ''),
+                'vn_date': p.get('vn_date', ''),
+                'vn_datetime': p.get('vn_datetime', '')
+            } for p in pivots], f, ensure_ascii=False, indent=2)
+            
+        # Log thông báo
+        save_log(f"✅ Đã sao lưu {len(pivots)} pivot vào {backup_file}", DEBUG_LOG_FILE)
+        
+        # Thông báo qua Telegram
+        bot = Bot(TOKEN)
+        bot.send_message(
+            chat_id=CHAT_ID,
+            text=f"✅ *S1 BOT BACKUP*\n\nĐã sao lưu {len(pivots)} pivot!\nFile: `{backup_file}`\nThời gian: {backup_time}",
+            parse_mode='Markdown'
+        )
+        
+        return True
+        
+    except Exception as e:
+        save_log(f"❌ Lỗi khi sao lưu pivot: {str(e)}", DEBUG_LOG_FILE)
+        save_log(traceback.format_exc(), DEBUG_LOG_FILE)
+        return False
+        
+def send_error_notification(error_message):
+    """Gửi thông báo lỗi qua Telegram"""
+    try:
+        bot = Bot(TOKEN)
+        bot.send_message(
+            chat_id=CHAT_ID,
+            text=f"⚠️ *S1 BOT ERROR*\n\n{error_message}\n\nThời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            parse_mode='Markdown'
+        )
+        return True
+    except Exception as e:
+        print(f"Không thể gửi thông báo lỗi: {str(e)}")
+        save_log(f"Không thể gửi thông báo lỗi: {str(e)}", DEBUG_LOG_FILE)
+        return False        
+        
 def detect_pivot(price, direction):
     return pivot_data.detect_pivot(price, direction)
     
@@ -1168,19 +1189,54 @@ def schedule_next_run(job_queue):
 def main():
     """Main entry point to start the bot."""
     try:
+         # Thêm thông tin về thời gian khởi động
+        start_time = datetime.now()
+        start_time_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Kiểm tra các thư mục cần thiết
+        for dir_path in ['logs', 'data', 'backup']:
+            if not os.path.exists(dir_path):
+                os.makedirs(dir_path)
+                
+        # Thông báo khởi động
+        save_log("=== S1 Bot khởi động ===", DEBUG_LOG_FILE)
+        save_log(f"Môi trường: {ENVIRONMENT}", DEBUG_LOG_FILE)
+        save_log(f"Thời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", DEBUG_LOG_FILE)
+                
         updater = Updater(TOKEN, use_context=True)
         dp = updater.dispatcher
         job_queue = updater.job_queue
         
         schedule_next_run(job_queue)  # Schedule first run
         
-        print("Bot is running...")
+        print("S1 Bot is running...")  # Thay thế bằng tiếng Anh hoặc không dấu
         logger.info("Bot started successfully.")
         updater.start_polling()
         updater.idle()
     except Exception as e:
-        logger.error(f"Error in main: {e}")
-        save_log(f"Error in main: {e}", DEBUG_LOG_FILE)
+        error_msg = f"Error in main: {str(e)}"
+        logger.error(error_msg)
+        save_log(error_msg, DEBUG_LOG_FILE)
+        save_log(traceback.format_exc(), DEBUG_LOG_FILE)
+        
+        # Thông báo khởi động qua Telegram
+        bot = Bot(TOKEN)
+        bot.send_message(
+            chat_id=CHAT_ID,
+            text=f"🚀 *S1 BOT STARTED*\n\nBot đã được khởi động thành công!\nMôi trường: `{ENVIRONMENT}`\nThời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            parse_mode='Markdown'
+        )
+        
+        print("Bot dang chay...")
+        logger.info("Bot khởi động thành công.")
+        updater.start_polling()
+        updater.idle()
+    except Exception as e:
+        error_msg = f"Lỗi trong hàm main: {str(e)}"
+        logger.error(error_msg)
+        save_log(error_msg, DEBUG_LOG_FILE)
+        save_log(traceback.format_exc(), DEBUG_LOG_FILE)
+        send_error_notification(error_msg)
 
 if __name__ == "__main__":
     main()
