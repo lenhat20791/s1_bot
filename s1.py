@@ -1166,41 +1166,39 @@ class PivotData:
             
             for pivot in pivots:
                 try:
-                    # Log chi tiết input
-                    save_log(f"\nXử lý pivot {pivot['type']}:", DEBUG_LOG_FILE)
-                    save_log(f"Input data: {json.dumps(pivot, ensure_ascii=False)}", DEBUG_LOG_FILE)
+                    # Log chi tiết input time
+                    save_log(f"\nDebug time processing:", DEBUG_LOG_FILE)
+                    save_log(f"Input vn_time: {pivot['vn_time']}", DEBUG_LOG_FILE)
+                    if 'original_time' in pivot:
+                        save_log(f"Original time: {pivot['original_time']}", DEBUG_LOG_FILE)
                     
-                    # Chuyển đổi thời gian VN sang UTC
-                    vn_dt_str = f"{pivot['vn_date']} {pivot['vn_time']}"  # e.g. "2025-03-24 06:30"
-                    save_log(f"VN datetime string: {vn_dt_str}", DEBUG_LOG_FILE)
+                    # Parse giờ và phút từ vn_time
+                    vn_hour, vn_minute = pivot['vn_time'].split(':')
+                    vn_hour = int(vn_hour)
+                    vn_minute = int(vn_minute)
                     
-                    try:
-                        # Parse datetime string
-                        vn_dt = datetime.strptime(vn_dt_str, '%Y-%m-%d %H:%M')
-                        # Localize to VN timezone
-                        vn_tz = pytz.timezone('Asia/Ho_Chi_Minh')
-                        vn_dt = vn_tz.localize(vn_dt)
-                        # Convert to UTC
-                        utc_dt = vn_dt.astimezone(pytz.UTC)
-                        
-                        save_log(f"Converted UTC time: {utc_dt.strftime('%Y-%m-%d %H:%M')}", DEBUG_LOG_FILE)
-                    except ValueError as dt_error:
-                        save_log(f"❌ Lỗi định dạng datetime: {str(dt_error)}", DEBUG_LOG_FILE)
-                        return False
+                    # Tạo datetime object với giờ:phút chính xác
+                    vn_dt = datetime.strptime(f"{pivot['vn_date']} {vn_hour:02d}:{vn_minute:02d}", '%Y-%m-%d %H:%M')
+                    vn_tz = pytz.timezone('Asia/Ho_Chi_Minh')
+                    vn_dt = vn_tz.localize(vn_dt)
+                    utc_dt = vn_dt.astimezone(pytz.UTC)
                     
-                    # Tạo pivot mới với đầy đủ thông tin thời gian
+                    # Log giá trị datetime để debug
+                    save_log(f"VN datetime: {vn_dt.strftime('%Y-%m-%d %H:%M')}", DEBUG_LOG_FILE)
+                    save_log(f"UTC datetime: {utc_dt.strftime('%Y-%m-%d %H:%M')}", DEBUG_LOG_FILE)
+                    
                     new_pivot = {
                         'type': pivot['type'],
                         'price': float(pivot['price']),
                         'direction': pivot['direction'],
                         'confirmed': True,
-                        'time': utc_dt.strftime('%H:%M'),         # Giờ UTC cho pivot
-                        'utc_date': utc_dt.strftime('%Y-%m-%d'),  # Ngày UTC
+                        'time': utc_dt.strftime('%H:%M'),  # Giữ nguyên phút
+                        'utc_date': utc_dt.strftime('%Y-%m-%d'),
                         'utc_datetime': utc_dt.strftime('%Y-%m-%d %H:%M'),
-                        'vn_date': pivot['vn_date'],              # Giữ nguyên ngày VN gốc
-                        'vn_time': pivot['vn_time'],              # Giữ nguyên giờ VN gốc
-                        'vn_datetime': vn_dt_str,                 # Datetime VN đầy đủ
-                        'skip_spacing_check': True                 # Bỏ qua kiểm tra khoảng cách cho pivot ban đầu
+                        'vn_date': pivot['vn_date'],
+                        'vn_time': pivot['vn_time'],  # Giữ nguyên phút gốc
+                        'vn_datetime': f"{pivot['vn_date']} {pivot['vn_time']}",
+                        'skip_spacing_check': True
                     }
                     
                     save_log("Prepared pivot data:", DEBUG_LOG_FILE)
