@@ -1197,10 +1197,19 @@ def process_pivot_ll(update: Update, context: CallbackContext):
     try:
         pivot_text = update.message.text
         save_log(f"\n=== PROCESSING PIVOT LL ===", DEBUG_LOG_FILE)
-        save_log(f"Input: {pivot_text}", DEBUG_LOG_FILE)
+        save_log(f"Input gốc: {pivot_text}", DEBUG_LOG_FILE)
         
+        # Làm sạch đầu vào
+        cleaned_pivot_text = pivot_text.strip()
+        if cleaned_pivot_text.endswith(')'):
+            cleaned_pivot_text = cleaned_pivot_text.rstrip(')')
+            save_log(f"Đã loại bỏ dấu ngoặc đóng: {cleaned_pivot_text}", DEBUG_LOG_FILE)
+        if cleaned_pivot_text.startswith('('):
+            cleaned_pivot_text = cleaned_pivot_text.lstrip('(')
+            save_log(f"Đã loại bỏ dấu ngoặc mở: {cleaned_pivot_text}", DEBUG_LOG_FILE)
+            
         # Kiểm tra định dạng cơ bản trước khi gọi parse_pivot_input
-        if not pivot_text or ":" not in pivot_text:
+        if not cleaned_pivot_text or ":" not in cleaned_pivot_text:
             save_log(f"❌ Định dạng đầu vào không hợp lệ: {pivot_text}", DEBUG_LOG_FILE)
             update.message.reply_text(
                 "❌ Định dạng không đúng!\n"
@@ -1212,7 +1221,7 @@ def process_pivot_ll(update: Update, context: CallbackContext):
             
         # Parse input pivot
         try:
-            new_pivot = parse_pivot_input(pivot_text)
+            new_pivot = parse_pivot_input(cleaned_pivot_text)
             save_log(f"Kết quả parse pivot: {str(new_pivot)}", DEBUG_LOG_FILE)
         except Exception as parse_error:
             save_log(f"❌ Lỗi khi parse pivot: {str(parse_error)}", DEBUG_LOG_FILE)
@@ -1660,10 +1669,14 @@ def main():
         save_log(f"Môi trường: {ENVIRONMENT}", DEBUG_LOG_FILE)
         save_log(f"Thời gian khởi động: {start_time_str}", DEBUG_LOG_FILE)
                 
-        updater = Updater(TOKEN, use_context=True)
+        # Khởi tạo updater với cài đặt đầy đủ
+        updater = Updater(TOKEN, use_context=True, workers=4)  # Tăng số workers
         dp = updater.dispatcher
-        job_queue = updater.job_queue
         
+        # Xóa mọi handler đã đăng ký trước đó (tránh đăng ký nhiều lần)
+        dp.handlers.clear()
+        
+        job_queue = updater.job_queue
         schedule_next_run(job_queue)  # Schedule first run
 
         # Set up conversation handler for setting initial pivots
@@ -1684,6 +1697,7 @@ def main():
                 ]
             },
             fallbacks=[CommandHandler('cancel', cancel_setpivots)],
+            name="setpivots_conversation",  # Thêm tên để dễ debug
             allow_reentry=True
         )
 
@@ -1701,9 +1715,13 @@ def main():
             parse_mode='Markdown'
         )
         
-        print("S1 Bot is running...")  # Thay thế bằng tiếng Anh hoặc không dấu
+        print("S1 Bot is running...")
         logger.info("Bot started successfully.")
-        updater.start_polling()
+        
+        # Khởi động bot với tùy chọn loại bỏ cập nhật đang chờ
+        # LỖI: Không thể sử dụng cả clean=True và drop_pending_updates=True
+        # Chỉ sử dụng một trong hai tùy chọn
+        updater.start_polling(drop_pending_updates=True)  # Chỉ giữ drop_pending_updates
         updater.idle()
     except Exception as e:
         error_msg = f"Lỗi trong hàm main: {str(e)}"
