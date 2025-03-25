@@ -20,6 +20,7 @@ from openpyxl.chart.marker import Marker
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 from pathlib import Path
+from default_pivots import initialize_default_pivots
 
 # Đảm bảo hỗ trợ UTF-8 cho đầu ra tiêu chuẩn
 if sys.stdout.encoding != 'utf-8':
@@ -1262,14 +1263,27 @@ def main():
         current_user = os.environ.get("CURRENT_USER", "lenhat20791")
         set_current_time_and_user(current_utc_time, current_user)
         
-        # Thử khôi phục từ backup
+       # Thử khôi phục từ backup
         logger.info("Attempting to restore from backup...")
         if restore_from_backup():
             logger.info("Successfully restored from backup")
             save_log("✅ Đã khôi phục dữ liệu từ backup", DEBUG_LOG_FILE)
         else:
-            logger.info("No backup found or restore failed")
-            save_log("⚠️ Không thể khôi phục từ backup", DEBUG_LOG_FILE)
+            # Nếu không có backup, khởi tạo pivot mặc định
+            logger.info("No backup found, initializing default pivots...")
+            save_log("🔄 Không có backup, đang khởi tạo pivot mặc định...", DEBUG_LOG_FILE)
+            
+            # Khởi tạo pivot từ module default_pivots
+            if initialize_default_pivots(pivot_data):
+                logger.info("Default pivots initialized successfully")
+                save_log("✅ Đã khởi tạo pivot mặc định thành công", DEBUG_LOG_FILE)
+                # Lưu pivot vào Excel
+                pivot_data.save_to_excel()
+                # Tạo backup ngay lập tức
+                backup_pivots()
+            else:
+                logger.warning("Failed to initialize default pivots")
+                save_log("❌ Không thể khởi tạo pivot mặc định", DEBUG_LOG_FILE)
         
         # Khởi tạo updater
         logger.info("Starting Telegram bot...")
